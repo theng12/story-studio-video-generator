@@ -16,6 +16,7 @@
 .settings-page .connection-note { margin: 7px 0 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
 .settings-page .settings-actions { justify-content: flex-start; gap: 8px; }
 .settings-page .settings-actions .btn { min-height: 32px; padding: 0 10px; font-size: 12px; }
-.settings-page .settings-footer { justify-content: space-between; margin-top: 16px; }
-.settings-page .settings-footer .primary { min-height: 38px; padding: 0 14px; }
+.settings-page .settings-footer { display: block; margin-top: 16px; }
+.settings-page .settings-footer #status { display: block; min-height: 18px; margin: 0 0 8px; text-align: center; }
+.settings-page .settings-footer .primary { width: 100%; min-height: 46px; padding: 0 14px; }
 @media (max-width: 480px) { .settings-page { padding: 18px 12px; } .settings-page .form-grid-two { grid-template-columns: 1fr; } }

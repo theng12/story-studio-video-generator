@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.18
+
+- Standardized Settings with the shared full-width primary Save action.
+
 ## 1.0.17
 
 - Removed duplicated workspace, provider, and pacing controls from global
