@@ -143,6 +143,9 @@ async function testConnection() {
 }
 
 async function signIn() {
+  const status = $('loginStatus');
+  status.textContent = 'Signing in…';
+  status.style.color = 'var(--muted)';
   try {
     const credentials = {
       username: $('studioUsername').value.trim(),
@@ -153,9 +156,11 @@ async function signIn() {
       credentials.username,
       credentials.password
     );
-    showStatus('✓ Signed in', 'ok');
+    status.textContent = '✓ Signed in — this browser session is ready.';
+    status.style.color = 'var(--ok)';
   } catch (error) {
-    showStatus(`Sign-in failed: ${error.message}`, 'failed');
+    status.textContent = `Sign-in failed: ${error.message}`;
+    status.style.color = 'var(--danger)';
   }
 }
 

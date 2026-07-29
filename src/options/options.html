@@ -43,30 +43,32 @@
         </label>
       </section>
 
-      <details class="advanced-panel settings-section" open>
-        <summary>Story Studio connection</summary>
-        <section class="settings-card">
-          <label>Server URL
-            <input id="studioBaseUrl" type="url" placeholder="http://localhost:8766" />
+      <section class="settings-section">
+        <span class="settings-section-title">Story Studio connection</span>
+        <label class="connection-url">Server URL
+          <input id="studioBaseUrl" type="url" placeholder="http://localhost:8766" />
+        </label>
+        <p class="hint connection-copy">Use <b>localhost</b> when Story Studio runs on this computer. For a remote or Tailscale server, grant site access, then sign in.</p>
+        <div class="connection-actions">
+          <button id="grantAccess" class="btn" type="button">Grant site access</button>
+          <button id="testConnection" class="btn" type="button">Test connection</button>
+        </div>
+        <div class="connection-feedback">
+          <span id="grantStatus" class="connection-note" aria-live="polite"></span>
+          <span id="testStatus" class="connection-note" aria-live="polite"></span>
+        </div>
+        <div class="connection-credentials">
+          <label>Username <span class="muted">(remote only)</span>
+            <input id="studioUsername" autocomplete="username" placeholder="Your username" />
           </label>
-          <p class="hint">Local Studio needs no login or access grant. A remote or Tailscale server needs both.</p>
-          <div class="row settings-actions">
-            <button id="grantAccess" class="btn" type="button">Grant site access</button>
-            <button id="testConnection" class="btn" type="button">Test connection</button>
-          </div>
-          <p id="grantStatus" class="connection-note" aria-live="polite"></p>
-          <p id="testStatus" class="connection-note" aria-live="polite"></p>
-          <div class="row">
-            <label>Username
-              <input id="studioUsername" autocomplete="username" />
-            </label>
-            <label>Password
-              <input id="studioPassword" type="password" autocomplete="current-password" />
-            </label>
-            <button id="login">Sign in</button>
-          </div>
-        </section>
-      </details>
+          <label>Password <span class="muted">(remote only)</span>
+            <input id="studioPassword" type="password" autocomplete="current-password" placeholder="Stored locally" />
+          </label>
+          <button id="login" class="btn" type="button">Sign in</button>
+        </div>
+        <p class="hint connection-login-hint">Sign in is only needed when your remote Story Studio server requires credentials.</p>
+        <p id="loginStatus" class="connection-note" aria-live="polite"></p>
+      </section>
 
       <!-- Workspace, provider settings, and queue pacing are configured in the
            side panel, next to the batch they affect. -->

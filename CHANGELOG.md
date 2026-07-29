@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.20
+
+- Replaced the expandable connection card with the shared always-visible
+  connection layout, including consistent sign-in guidance and feedback.
+
 ## 1.0.19
 
 - Aligned Video Generator's primary, link, and focus colors with its teal icon
