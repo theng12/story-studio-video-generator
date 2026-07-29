@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.21
+
+- Hide the Update Studio URL recovery action while a fresh Studio connection
+  test is in progress; it reappears only if that test fails.
+
 ## 1.0.20
 
 - Replaced the expandable connection card with the shared always-visible

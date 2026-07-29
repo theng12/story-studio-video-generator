@@ -127,6 +127,7 @@ async function testStudioConnection() {
   };
 
   button.disabled = true;
+  $('openStudioSettings').classList.add('hidden');
   setConnectionStatus('Testing…', 'var(--muted)');
   try {
     const url = settings.studioBaseUrl || '';
