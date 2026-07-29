@@ -95,7 +95,10 @@
     <section id="companionPane">
       <div class="row end connection-row">
         <span id="connStatus" class="muted" aria-live="polite"></span>
-        <button id="testConn" class="small connection-test">Test Studio connection</button>
+        <div class="studio-connection-actions">
+          <button id="openStudioSettings" class="small connection-test connection-fix hidden" type="button">Update Studio URL</button>
+          <button id="testConn" class="small connection-test">Test Studio connection</button>
+        </div>
       </div>
       <div class="form-grid form-grid-two">
         <label>Project

@@ -300,6 +300,8 @@ header .settings-gear:focus-visible { outline: 2px solid var(--accent); outline-
 .section-head { margin-top: 12px; }
 .connection-row { flex-wrap: wrap; align-items: center; }
 .connection-test { font-weight: 600; }
+.studio-connection-actions { display: flex; align-items: center; gap: 8px; }
+.connection-fix { border-color: color-mix(in srgb, var(--danger) 60%, var(--border)); color: var(--danger); }
 #connStatus { text-align: right; }
 .open-provider-row { margin-top: 12px; }
 

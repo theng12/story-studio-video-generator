@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.16
+
+- Added site-access and connection testing to Story Studio Settings.
+- Added direct failed-connection recovery to the Studio URL setting and aligned Settings layout.
+
 ## 1.0.15
 
 - Standardized the Video panel controls, disclosures, and toolbar.

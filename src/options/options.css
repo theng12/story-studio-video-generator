@@ -1,0 +1,21 @@
+/* Shared settings layout for the Story Studio generator family. */
+.settings-page { width: 100%; min-width: 320px; padding: 28px 16px; }
+.settings-page .settings-wrap { width: 100%; max-width: 620px; margin: 0 auto; }
+.settings-page .settings-header { margin: 0 0 16px; }
+.settings-page .settings-header h1 { margin: 0; color: var(--fg); font-size: 18px; font-weight: 650; letter-spacing: -.01em; }
+.settings-page .settings-section { margin: 0 0 12px; padding: 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+.settings-page .settings-section-title { display: block; margin-bottom: 10px; color: var(--fg); font-size: 14px; font-weight: 650; }
+.settings-page .settings-section label { display: block; margin-top: 12px; color: var(--muted); font-size: 12px; }
+.settings-page .settings-section label:first-of-type { margin-top: 0; }
+.settings-page .settings-section input,
+.settings-page .settings-section select { min-height: 38px; margin-top: 5px; border-radius: 8px; font-size: 14px; }
+.settings-page .settings-section .row { margin-top: 12px; }
+.settings-page .settings-section .settings-card { padding: 12px 0 0; }
+.settings-page .settings-section summary { min-height: 22px; padding: 0; color: var(--fg); font-size: 14px; font-weight: 650; }
+.settings-page .hint,
+.settings-page .connection-note { margin: 7px 0 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
+.settings-page .settings-actions { justify-content: flex-start; gap: 8px; }
+.settings-page .settings-actions .btn { min-height: 32px; padding: 0 10px; font-size: 12px; }
+.settings-page .settings-footer { justify-content: space-between; margin-top: 16px; }
+.settings-page .settings-footer .primary { min-height: 38px; padding: 0 14px; }
+@media (max-width: 480px) { .settings-page { padding: 18px 12px; } .settings-page .form-grid-two { grid-template-columns: 1fr; } }

@@ -123,6 +123,7 @@ async function testStudioConnection() {
   };
   const result = (state, detail, color) => {
     setConnectionStatus(`${state} · ${testedAt()}${detail ? ` — ${detail}` : ''}`, color);
+    $('openStudioSettings').classList.toggle('hidden', state !== 'Failed');
   };
 
   button.disabled = true;
@@ -731,6 +732,7 @@ async function init() {
   initWhatsNew();
 
   $('openOptions').addEventListener('click', () => chrome.runtime.openOptionsPage());
+  $('openStudioSettings').addEventListener('click', () => chrome.runtime.openOptionsPage());
   $('testConn').addEventListener('click', testStudioConnection);
   $('project').addEventListener('change', () => {
     loadEpisodes().catch((error) => setStatus(publicMessage(error.message), 'failed'));

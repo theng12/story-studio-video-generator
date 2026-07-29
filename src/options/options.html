@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Story Studio Video Generator — Settings</title>
     <link rel="stylesheet" href="../popup/popup.css" />
+    <link rel="stylesheet" href="options.css" />
     <style>
       body { width: 100%; max-width: none; padding: 24px 16px; }
       .settings-wrap { width: 100%; max-width: 480px; margin: 0 auto; }
@@ -27,17 +28,20 @@
     </style>
     <script src="../lib/theme-preload.js"></script>
   </head>
-  <body>
+  <body class="settings-page">
     <div class="settings-wrap">
-      <header><h1>Story Studio Video Generator — Settings</h1></header>
+      <header class="settings-header"><h1>Story Studio Video Generator — Settings</h1></header>
 
-      <label>Theme
-        <select id="theme">
-          <option value="system">System (match OS)</option>
-          <option value="light">Light</option>
-          <option value="dark">Dark</option>
-        </select>
-      </label>
+      <section class="settings-section">
+        <span class="settings-section-title">Appearance</span>
+        <label>Theme
+          <select id="theme">
+            <option value="system">System (match OS)</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+        </label>
+      </section>
 
       <details class="advanced-panel settings-section" open>
         <summary>Story Studio connection</summary>
@@ -45,6 +49,13 @@
           <label>Server URL
             <input id="studioBaseUrl" type="url" placeholder="http://localhost:8766" />
           </label>
+          <p class="hint">Local Studio needs no login or access grant. A remote or Tailscale server needs both.</p>
+          <div class="row settings-actions">
+            <button id="grantAccess" class="btn" type="button">Grant site access</button>
+            <button id="testConnection" class="btn" type="button">Test connection</button>
+          </div>
+          <p id="grantStatus" class="connection-note" aria-live="polite"></p>
+          <p id="testStatus" class="connection-note" aria-live="polite"></p>
           <div class="row">
             <label>Username
               <input id="studioUsername" autocomplete="username" />
