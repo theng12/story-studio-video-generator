@@ -442,14 +442,14 @@ label.check {
 label.check input { width: auto; margin: 0; flex: none; }
 .cooldown-hint { margin: 12px 0 0; line-height: 1.4; }
 
-.queue-actions {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
+.queue-action-group {
   margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--divider);
 }
-.queue-actions-below { padding-top: 12px; border-top: 1px solid var(--divider); }
-.queue-actions button { min-width: 0; padding: 7px 8px; font-size: 12px; }
+.queue-action-heading { color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.queue-action-buttons { display: flex; gap: 12px; margin-top: 8px; }
+.queue-action-buttons button { flex: 1; min-width: 0; min-height: var(--compact-height); padding: 0 8px; font-size: 12px; }
 #clearQueue { color: var(--danger); }
 .queue-table-head {
   display: flex;
@@ -556,6 +556,6 @@ label.check input { width: auto; margin: 0; flex: none; }
 @media (max-width: 340px) {
   .form-grid-two,
   .form-grid-three,
-  .queue-actions { grid-template-columns: 1fr; }
+  .queue-action-buttons { flex-direction: column; }
   .activity-meta { white-space: normal; }
 }

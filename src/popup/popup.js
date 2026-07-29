@@ -522,11 +522,11 @@ function renderQueue(queue, state, live) {
   elapsedStartedAt = Number(running?.startedAt) || 0;
   updateElapsed();
 
-  $('queueControls').hidden = !total;
   $('pauseQueue').hidden = !left;
   $('pauseQueue').textContent = state?.paused || cooling ? 'Resume' : 'Pause';
   $('pauseQueue').dataset.paused = String(Boolean(state?.paused || cooling));
-  $('retryFailed').hidden = counts.failed === 0;
+  $('retryFailed').disabled = counts.failed === 0;
+  $('clearQueue').disabled = counts.pending === 0;
   $('queueDetail').hidden = !total;
   $('queueList').hidden = !total;
   $('queueInfo').textContent = `${total} video${total === 1 ? '' : 's'}`;

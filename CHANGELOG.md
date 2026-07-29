@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.24
+
+- Kept the compact queue-action row visible and added a consistent Clear pending control.
+
 ## 1.0.23
 
 - Restored Standalone mode for local video prompts, with completed files saved to Downloads.
