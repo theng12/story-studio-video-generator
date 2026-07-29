@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.22
+
+- Aligned the side-panel workflow with Image Generator: Provider settings,
+  Generation workspace, Queue pacing, then Fleet Hub.
+- Added a quiet Fleet Hub “Coming soon” disclosure; Video queue controls remain local.
+
 ## 1.0.21
 
 - Hide the Update Studio URL recovery action while a fresh Studio connection

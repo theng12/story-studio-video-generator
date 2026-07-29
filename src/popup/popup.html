@@ -78,46 +78,6 @@
       <button id="openFlow" class="small" title="Open the generation workspace">↗ Open workspace</button>
     </div>
 
-    <details class="advanced-panel workspace-panel">
-      <summary>
-        <span>Generation workspace</span>
-        <span id="flowProject" class="summary-state">None selected</span>
-      </summary>
-      <section class="context-card">
-        <p class="muted">Use a signed-in workspace for this batch.</p>
-        <div class="workspace-actions">
-          <button id="useFlow" class="small">Use current tab</button>
-          <button id="newFlow" class="small">New workspace</button>
-        </div>
-      </section>
-    </details>
-
-    <section id="companionPane">
-      <div class="row end connection-row">
-        <span id="connStatus" class="muted" aria-live="polite"></span>
-        <div class="studio-connection-actions">
-          <button id="openStudioSettings" class="small connection-test connection-fix hidden" type="button">Update Studio URL</button>
-          <button id="testConn" class="small connection-test">Test Studio connection</button>
-        </div>
-      </div>
-      <div class="form-grid form-grid-two">
-        <label>Project
-          <select id="project"></select>
-        </label>
-        <label>Episode
-          <select id="episode"></select>
-        </label>
-      </div>
-      <div class="row between section-head">
-        <span class="muted" id="scenesSummary">Eligible scenes</span>
-        <div class="hgroup">
-          <button id="loadScenes" class="link small">Load scenes</button>
-          <button id="selectMissing" class="link small">Select missing</button>
-        </div>
-      </div>
-      <div id="scenes" class="sectionlist"></div>
-    </section>
-
     <details class="advanced-panel provider-settings-panel">
       <summary>
         <span>Provider settings</span>
@@ -147,9 +107,19 @@
       </section>
     </details>
 
-    <div class="batch-actions">
-      <button id="queueSelected" class="primary" disabled>Queue selected</button>
-    </div>
+    <details class="advanced-panel workspace-panel">
+      <summary>
+        <span>Generation workspace</span>
+        <span id="flowProject" class="summary-state">None selected</span>
+      </summary>
+      <section class="context-card">
+        <p class="muted">Use a signed-in workspace for this batch.</p>
+        <div class="workspace-actions">
+          <button id="useFlow" class="small">Use current tab</button>
+          <button id="newFlow" class="small">New workspace</button>
+        </div>
+      </section>
+    </details>
 
     <details class="advanced-panel" id="humanPacePanel">
       <summary>
@@ -212,6 +182,46 @@
       </section>
       </div>
     </details>
+
+    <details class="advanced-panel upcoming-panel">
+      <summary>
+        <span>Fleet Hub</span>
+        <span class="summary-state">Coming soon</span>
+      </summary>
+      <section class="context-card">
+        <p class="muted">Fleet coordination is coming to Video Generator. Queue controls remain local for now.</p>
+      </section>
+    </details>
+
+    <section id="companionPane">
+      <div class="row end connection-row">
+        <span id="connStatus" class="muted" aria-live="polite"></span>
+        <div class="studio-connection-actions">
+          <button id="openStudioSettings" class="small connection-test connection-fix hidden" type="button">Update Studio URL</button>
+          <button id="testConn" class="small connection-test">Test Studio connection</button>
+        </div>
+      </div>
+      <div class="form-grid form-grid-two">
+        <label>Project
+          <select id="project"></select>
+        </label>
+        <label>Episode
+          <select id="episode"></select>
+        </label>
+      </div>
+      <div class="row between section-head">
+        <span class="muted" id="scenesSummary">Eligible scenes</span>
+        <div class="hgroup">
+          <button id="loadScenes" class="link small">Load scenes</button>
+          <button id="selectMissing" class="link small">Select missing</button>
+        </div>
+      </div>
+      <div id="scenes" class="sectionlist"></div>
+    </section>
+
+    <div class="batch-actions">
+      <button id="queueSelected" class="primary" disabled>Queue selected</button>
+    </div>
 
     <p id="status" class="muted"></p>
 
