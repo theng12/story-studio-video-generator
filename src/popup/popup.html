@@ -43,11 +43,6 @@
           <div class="activity-progress" aria-hidden="true"><span id="activityProgressFill"></span></div>
           <span id="activityProgressText">0%</span>
         </div>
-        <div id="queueControls" class="queue-actions" hidden>
-          <button id="pauseQueue" hidden>Pause</button>
-          <button id="retryFailed" hidden>Retry failed</button>
-          <button id="clearQueue">Clear queue</button>
-        </div>
         <div id="queueDetail" hidden>
           <div class="queue-table-head"><span id="queueInfo">Queue</span><span>Status</span></div>
           <ul id="queueList" class="queuelist" hidden></ul>
@@ -58,6 +53,11 @@
             <span class="failed">! Failed</span>
             <span class="ambiguous">! Review</span>
           </div>
+        </div>
+        <div id="queueControls" class="queue-actions queue-actions-below" hidden>
+          <button id="pauseQueue" hidden>Pause</button>
+          <button id="retryFailed" hidden>Retry failed</button>
+          <button id="clearQueue">Clear pending</button>
         </div>
       </div>
     </section>
@@ -144,14 +144,26 @@
       <button id="queueSelected" class="primary" disabled>Queue selected</button>
     </div>
 
-    <details class="advanced-panel">
-      <summary>Human pace</summary>
+    <details class="advanced-panel" id="humanPacePanel">
+      <summary>
+        <span>Human pace</span>
+        <span id="humanPaceSummary" class="summary-state">—</span>
+      </summary>
       <section class="pace-card">
         <div class="row between">
           <span class="muted small">Gap between generations</span>
           <span id="humanPaceState" class="pace-state" aria-live="polite"></span>
         </div>
-        <div class="row pace-custom">
+        <label class="pace-preset"><span class="mini">Suggested pace</span>
+          <select id="humanPacePreset">
+            <option value="off">No delay</option>
+            <option value="quick">Quick · 2–5 seconds</option>
+            <option value="balanced">Balanced · 5–12 seconds</option>
+            <option value="cautious">Cautious · 15–40 seconds</option>
+            <option value="custom">Custom</option>
+          </select>
+        </label>
+        <div id="humanPaceCustom" class="row pace-custom" hidden>
           <label class="grow"><span class="mini">Min seconds</span>
             <input id="humanDelayMinSec" type="number" min="0" max="3600" step="1" />
           </label>
@@ -159,6 +171,41 @@
             <input id="humanDelayMaxSec" type="number" min="0" max="3600" step="1" />
           </label>
         </div>
+      </section>
+    </details>
+
+    <details class="advanced-panel" id="cooldownPanel">
+      <summary>
+        <span>Provider cooldown</span>
+        <span id="cooldownSummary" class="summary-state">Manual</span>
+      </summary>
+      <section class="pace-card">
+        <div class="row between">
+          <span class="muted small">Temporary service limits</span>
+          <span id="cooldownState" class="pace-state off" aria-live="polite">Manual</span>
+        </div>
+        <label class="check">
+          <input type="checkbox" id="cooldownAutoResume" />
+          <span>Resume after a detected temporary limit</span>
+        </label>
+        <div id="cooldownOpts" hidden>
+          <label class="pace-preset"><span class="mini">Suggested wait</span>
+            <select id="cooldownPreset">
+              <option value="15">15 minutes</option>
+              <option value="30">30 minutes</option>
+              <option value="60">1 hour</option>
+              <option value="240">4 hours</option>
+              <option value="1440">24 hours</option>
+              <option value="custom">Custom</option>
+            </select>
+          </label>
+          <div id="cooldownCustom" class="row pace-custom" hidden>
+            <label class="grow"><span class="mini">Minutes</span>
+              <input id="cooldownMinutes" type="number" min="1" max="1440" step="1" />
+            </label>
+          </div>
+        </div>
+        <p class="muted cooldown-hint">A temporary limit only retries work that did not enter an unknown paid submission. Needs-review jobs always require your explicit decision.</p>
       </section>
     </details>
 

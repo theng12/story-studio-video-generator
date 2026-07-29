@@ -214,6 +214,8 @@ a { color: var(--link); }
 .genstatus.queued .gs-dot { background: var(--link); }
 .genstatus.waiting { border-color: #6a8cff; background: color-mix(in srgb, #6a8cff 14%, transparent); }
 .genstatus.waiting .gs-dot { background: #6a8cff; }
+.genstatus.cooldown { border-color: #6a8cff; background: color-mix(in srgb, #6a8cff 14%, transparent); }
+.genstatus.cooldown .gs-dot { background: #6a8cff; }
 .genstatus.paused { border-color: var(--warning); background: color-mix(in srgb, var(--warning) 14%, transparent); }
 .genstatus.paused .gs-dot { background: var(--warning); }
 .genstatus.done { border-color: var(--ok); }
@@ -318,6 +320,7 @@ header .settings-gear:focus-visible { outline: 2px solid var(--accent); outline-
 .advanced-panel summary {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   gap: 8px;
   padding: 9px 10px;
   color: var(--muted);
@@ -325,6 +328,16 @@ header .settings-gear:focus-visible { outline: 2px solid var(--accent); outline-
   font-weight: 600;
   cursor: pointer;
 }
+.advanced-panel summary::-webkit-details-marker { display: none; }
+.advanced-panel summary::after {
+  content: '⌄';
+  flex: none;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1;
+  transition: transform .16s ease;
+}
+.advanced-panel[open] summary::after { transform: rotate(180deg); }
 .summary-state {
   overflow: hidden;
   max-width: 55%;
@@ -383,6 +396,7 @@ header .settings-gear:focus-visible { outline: 2px solid var(--accent); outline-
 .batch-actions { margin-top: 12px; }
 .batch-actions .primary { margin-top: 0; }
 .pace-card .mini { display: block; margin-bottom: 2px; color: var(--muted); font-size: 11px; }
+.pace-preset { margin-top: 8px; }
 .pace-custom { align-items: flex-end; gap: 8px; margin-top: 6px; }
 .pace-custom input { margin-top: 0; }
 .pace-state {
@@ -394,6 +408,15 @@ header .settings-gear:focus-visible { outline: 2px solid var(--accent); outline-
   white-space: nowrap;
 }
 .pace-state.off { color: var(--muted); }
+label.check {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--fg);
+  font-size: 12px;
+}
+label.check input { width: auto; margin: 0; flex: none; }
+.cooldown-hint { margin: 8px 0 0; line-height: 1.4; }
 
 .queue-actions {
   display: grid;
@@ -401,6 +424,7 @@ header .settings-gear:focus-visible { outline: 2px solid var(--accent); outline-
   gap: 8px;
   margin-top: 14px;
 }
+.queue-actions-below { padding-top: 14px; border-top: 1px solid var(--divider); }
 .queue-actions button { min-width: 0; padding: 8px 5px; font-size: 12px; }
 #pauseQueue,
 #retryFailed { color: var(--link); }

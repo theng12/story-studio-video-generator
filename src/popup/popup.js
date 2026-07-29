@@ -9,6 +9,7 @@ let projects = [];
 let episodes = [];
 let scenes = [];
 let elapsedStartedAt = 0;
+let latestLiveStatus = null;
 
 function setStatus(text, kind = '') {
   $('status').textContent = text;
@@ -285,6 +286,16 @@ function formatElapsed(milliseconds) {
   return `${minutes}:${String(seconds).padStart(2, '0')}`;
 }
 
+function formatDuration(milliseconds) {
+  const totalSeconds = Math.max(0, Math.ceil(milliseconds / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  if (hours) return `${hours}h${minutes ? ` ${minutes}m` : ''}`;
+  if (minutes) return `${minutes}m${seconds ? ` ${seconds}s` : ''}`;
+  return `${seconds}s`;
+}
+
 function updateElapsed() {
   if (!elapsedStartedAt) {
     $('activityElapsed').hidden = true;
@@ -319,7 +330,10 @@ function renderQueue(queue, state, live) {
   const finished = counts.done + counts.failed + counts.ambiguous;
   const running = queue.find((item) => item.status === 'running');
   const nextPending = queue.find((item) => item.status === 'pending');
-  const waiting = left > 0 && Number(live?.countdownUntil) > Date.now();
+  const cooldownUntil = Number(state?.cooldownUntil) ||
+    (live?.countdownReason === 'cooldown' ? Number(live.countdownUntil) : 0);
+  const cooling = left > 0 && cooldownUntil > Date.now();
+  const waiting = !cooling && left > 0 && Number(live?.countdownUntil) > Date.now();
 
   let stateClass = 'idle';
   let stateText = 'Ready';
@@ -329,6 +343,9 @@ function renderQueue(queue, state, live) {
   } else if (running) {
     stateClass = 'running';
     stateText = 'Generating';
+  } else if (cooling) {
+    stateClass = 'cooldown';
+    stateText = 'Cooldown';
   } else if (waiting) {
     stateClass = 'waiting';
     stateText = 'Waiting';
@@ -352,7 +369,7 @@ function renderQueue(queue, state, live) {
 
   const panelClasses = ['activity-panel'];
   if (running) panelClasses.push('is-running');
-  else if (waiting) panelClasses.push('is-waiting');
+  else if (waiting || cooling) panelClasses.push('is-waiting');
   else if (counts.ambiguous) panelClasses.push('has-review');
   else if (total && !left && counts.failed) panelClasses.push('has-failure');
   else if (total && !left) panelClasses.push('is-complete');
@@ -370,7 +387,9 @@ function renderQueue(queue, state, live) {
     $('activeJobMeta').textContent = `${left} video${left === 1 ? '' : 's'} waiting.`;
   } else if (nextPending) {
     $('activeJob').textContent = nextPending.label;
-    $('activeJobMeta').textContent = waiting ? 'Waiting for the configured pace.' : 'Waiting to start.';
+    $('activeJobMeta').textContent = cooling
+      ? `Cooldown ends in ${formatDuration(cooldownUntil - Date.now())}.`
+      : waiting ? 'Waiting for the configured pace.' : 'Waiting to start.';
   } else if (total) {
     $('activeJob').textContent = counts.failed ? 'Batch completed with issues' : 'Batch complete';
     $('activeJobMeta').textContent =
@@ -389,8 +408,8 @@ function renderQueue(queue, state, live) {
 
   $('queueControls').hidden = !total;
   $('pauseQueue').hidden = !left;
-  $('pauseQueue').textContent = state?.paused ? 'Resume' : 'Pause';
-  $('pauseQueue').dataset.paused = String(Boolean(state?.paused));
+  $('pauseQueue').textContent = state?.paused || cooling ? 'Resume' : 'Pause';
+  $('pauseQueue').dataset.paused = String(Boolean(state?.paused || cooling));
   $('retryFailed').hidden = counts.failed === 0;
   $('queueDetail').hidden = !total;
   $('queueList').hidden = !total;
@@ -446,6 +465,8 @@ function renderQueue(queue, state, live) {
     row.append(number, label, status, actions);
     $('queueList').appendChild(row);
   });
+
+  renderCooldownState(cooldownUntil);
 }
 
 async function pollQueue() {
@@ -454,28 +475,123 @@ async function pollQueue() {
       chrome.runtime.sendMessage({ type: 'getQueue' }),
       chrome.storage.local.get('lastVideoStatus'),
     ]);
-    renderQueue(state?.queue || [], state, stored.lastVideoStatus);
+    latestLiveStatus = stored.lastVideoStatus || null;
+    renderQueue(state?.queue || [], state, latestLiveStatus);
   } catch (error) {
     setStatus(`Queue status unavailable: ${publicMessage(error.message)}`, 'failed');
   }
 }
 
-function renderHumanPace() {
-  $('humanDelayMinSec').value = settings.humanDelayMinSec;
-  $('humanDelayMaxSec').value = settings.humanDelayMaxSec;
-  const min = Number(settings.humanDelayMinSec) || 0;
-  const max = Number(settings.humanDelayMaxSec) || 0;
-  $('humanPaceState').textContent = max ? `${min}–${max}s` : 'Off';
-  $('humanPaceState').className = `pace-state${max ? '' : ' off'}`;
+const HUMAN_PACE_PRESETS = {
+  off: { min: 0, max: 0 },
+  quick: { min: 2, max: 5 },
+  balanced: { min: 5, max: 12 },
+  cautious: { min: 15, max: 40 },
+};
+const COOLDOWN_PRESETS = [15, 30, 60, 240, 1440];
+
+function paceValues() {
+  const first = Math.max(0, Number(settings?.humanDelayMinSec) || 0);
+  const second = Math.max(0, Number(settings?.humanDelayMaxSec) || 0);
+  return { min: Math.min(first, second), max: Math.max(first, second) };
 }
 
-async function savePace() {
-  settings = await saveSettings({
+function pacePresetKey(min, max) {
+  return Object.entries(HUMAN_PACE_PRESETS).find(
+    ([, value]) => value.min === min && value.max === max
+  )?.[0] || 'custom';
+}
+
+function renderHumanPace() {
+  const { min, max } = paceValues();
+  const key = pacePresetKey(min, max);
+  const label = max === 0 ? 'No delay' : min === max ? `${min}s` : `${min}–${max}s`;
+  $('humanPacePreset').value = key;
+  $('humanPaceCustom').hidden = key !== 'custom';
+  $('humanDelayMinSec').value = min;
+  $('humanDelayMaxSec').value = max;
+  $('humanPaceState').textContent = label;
+  $('humanPaceState').className = `pace-state${max ? '' : ' off'}`;
+  $('humanPaceSummary').textContent = label;
+}
+
+async function savePace(values = null) {
+  settings = await saveSettings(values || {
     humanDelayMinSec: $('humanDelayMinSec').value,
     humanDelayMaxSec: $('humanDelayMaxSec').value,
   });
   renderHumanPace();
   setStatus('Human pace saved.', 'ok');
+}
+
+async function onPacePreset() {
+  const key = $('humanPacePreset').value;
+  if (key === 'custom') {
+    $('humanPaceCustom').hidden = false;
+    $('humanDelayMinSec').focus();
+    return;
+  }
+  await savePace({
+    humanDelayMinSec: HUMAN_PACE_PRESETS[key].min,
+    humanDelayMaxSec: HUMAN_PACE_PRESETS[key].max,
+  });
+}
+
+function cooldownMinutesLabel(minutes) {
+  if (minutes % 60 === 0) return `${minutes / 60} hr`;
+  return minutes < 60 ? `${minutes} min` : `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+}
+
+function cooldownSettings() {
+  return settings.providerCooldown || { autoResume: false, minutes: 15 };
+}
+
+function renderCooldownCard() {
+  const cooldown = cooldownSettings();
+  const preset = COOLDOWN_PRESETS.includes(cooldown.minutes) ? String(cooldown.minutes) : 'custom';
+  $('cooldownAutoResume').checked = cooldown.autoResume;
+  $('cooldownOpts').hidden = !cooldown.autoResume;
+  $('cooldownPreset').value = preset;
+  $('cooldownCustom').hidden = !cooldown.autoResume || preset !== 'custom';
+  $('cooldownMinutes').value = String(cooldown.minutes);
+  renderCooldownState();
+}
+
+function renderCooldownState(cooldownUntil = 0) {
+  const cooldown = cooldownSettings();
+  const activeUntil = Number(cooldownUntil) ||
+    (latestLiveStatus?.countdownReason === 'cooldown' ? Number(latestLiveStatus.countdownUntil) : 0);
+  const active = activeUntil > Date.now();
+  const label = !cooldown.autoResume
+    ? 'Manual'
+    : active ? `Cooldown · ${formatDuration(activeUntil - Date.now())}` : `Auto · ${cooldownMinutesLabel(cooldown.minutes)}`;
+  $('cooldownState').textContent = label;
+  $('cooldownState').className = `pace-state${cooldown.autoResume ? '' : ' off'}`;
+  $('cooldownSummary').textContent = active ? 'Cooling down' : cooldown.autoResume ? 'Auto-resume' : 'Manual';
+}
+
+async function saveCooldown(patch) {
+  settings = await saveSettings({
+    providerCooldown: { ...cooldownSettings(), ...patch },
+  });
+  renderCooldownCard();
+  setStatus('Provider cooldown saved.', 'ok');
+}
+
+async function onCooldownPreset() {
+  const value = $('cooldownPreset').value;
+  if (value === 'custom') {
+    $('cooldownCustom').hidden = false;
+    $('cooldownMinutes').focus();
+    return;
+  }
+  await saveCooldown({ minutes: Number(value) });
+}
+
+async function saveCooldownCustom() {
+  await saveCooldown({
+    minutes: Math.max(1, Math.min(1440, Math.round(Number($('cooldownMinutes').value) || 15))),
+  });
 }
 
 function renderChangelog(markdown) {
@@ -535,6 +651,7 @@ async function init() {
   $('saveTarget').value = settings.saveTarget;
   renderWorkspace();
   renderHumanPace();
+  renderCooldownCard();
   initWhatsNew();
 
   $('openOptions').addEventListener('click', () => chrome.runtime.openOptionsPage());
@@ -593,13 +710,34 @@ async function init() {
       settings = await saveSettings({ [field]: $(field).value });
     });
   }
-  $('humanDelayMinSec').addEventListener('change', savePace);
-  $('humanDelayMaxSec').addEventListener('change', savePace);
+  $('humanPacePreset').addEventListener('change', () => {
+    onPacePreset().catch((error) => setStatus(publicMessage(error.message), 'failed'));
+  });
+  $('humanDelayMinSec').addEventListener('change', () => {
+    savePace().catch((error) => setStatus(publicMessage(error.message), 'failed'));
+  });
+  $('humanDelayMaxSec').addEventListener('change', () => {
+    savePace().catch((error) => setStatus(publicMessage(error.message), 'failed'));
+  });
+  $('cooldownAutoResume').addEventListener('change', () => {
+    saveCooldown({ autoResume: $('cooldownAutoResume').checked }).catch((error) =>
+      setStatus(publicMessage(error.message), 'failed')
+    );
+  });
+  $('cooldownPreset').addEventListener('change', () => {
+    onCooldownPreset().catch((error) => setStatus(publicMessage(error.message), 'failed'));
+  });
+  $('cooldownMinutes').addEventListener('change', () => {
+    saveCooldownCustom().catch((error) => setStatus(publicMessage(error.message), 'failed'));
+  });
 
   await loadProjects().catch((error) => setStatus(`Story Studio: ${publicMessage(error.message)}`, 'failed'));
   await pollQueue();
   setInterval(pollQueue, 1500);
-  setInterval(updateElapsed, 1000);
+  setInterval(() => {
+    updateElapsed();
+    renderCooldownState();
+  }, 1000);
 }
 
 document.addEventListener('DOMContentLoaded', () => {

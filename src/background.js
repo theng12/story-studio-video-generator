@@ -9,6 +9,7 @@ const QUEUE_KEY = 'videoQueue';
 const PAUSED_KEY = 'videoQueuePaused';
 const STATUS_KEY = 'lastVideoStatus';
 const NEXT_RUN_KEY = 'nextVideoProviderRunAt';
+const COOLDOWN_KEY = 'videoProviderCooldownUntil';
 const ALARM = 'videoQueueTick';
 
 let processing = false;
@@ -151,6 +152,45 @@ async function setNextRun(settings) {
   const maximum = Math.max(minimum, Number(settings.humanDelayMaxSec) || 0);
   const seconds = minimum + Math.floor(Math.random() * (maximum - minimum + 1));
   await chrome.storage.local.set({ [NEXT_RUN_KEY]: Date.now() + seconds * 1000 });
+}
+
+function isTemporaryLimit(error) {
+  return /(?:\b429\b|rate[ -]?limit|too many requests|quota|resource[_ -]?exhausted|limit reached)/i.test(
+    String(error?.message || error || '')
+  );
+}
+
+async function holdForCooldown(settings, item) {
+  const { [COOLDOWN_KEY]: resumeAt = 0 } = await chrome.storage.local.get(COOLDOWN_KEY);
+  const remaining = Number(resumeAt) - Date.now();
+  if (remaining <= 0) {
+    if (resumeAt) await chrome.storage.local.remove(COOLDOWN_KEY);
+    return false;
+  }
+  if (!settings.providerCooldown.autoResume) {
+    await chrome.storage.local.remove(COOLDOWN_KEY);
+    return false;
+  }
+  await writeStatus('Generation service cooldown; the queue will resume automatically.', 'info', {
+    countdownUntil: Number(resumeAt),
+    countdownReason: 'cooldown',
+    countdownLabel: item.label,
+  });
+  createAlarm();
+  return true;
+}
+
+async function requeueForCooldown(id) {
+  const queue = await getQueue();
+  const item = queue.find((candidate) => candidate.id === id);
+  if (!item) return false;
+  item.status = 'pending';
+  item.phase = item.videoMediaId ? 'polling' : item.startMediaId ? 'prepared' : 'queued';
+  delete item.error;
+  delete item.startedAt;
+  delete item.finishedAt;
+  await setQueue(queue);
+  return true;
 }
 
 async function generateAndSave(item, settings, tab) {
@@ -315,6 +355,7 @@ async function processQueue() {
       const pending = queue.find((item) => item.status === 'pending');
       if (!pending) break;
       const settings = await getSettings();
+      if (await holdForCooldown(settings, pending)) break;
       await waitForPacing(settings, pending);
       if (await isPaused()) break;
       const current = await patchItem(pending.id, {
@@ -338,18 +379,39 @@ async function processQueue() {
         const latest = (await getQueue()).find((item) => item.id === current.id) || current;
         const ambiguous =
           latest.phase === 'submitting' && !latest.videoMediaId;
-        await patchItem(current.id, {
-          status: ambiguous ? 'ambiguous' : 'failed',
-          error: ambiguous
-            ? 'The paid request may have reached Flow, but no media ID was returned. Inspect the Flow project before choosing to resubmit.'
-            : String(error?.message || error),
-          finishedAt: Date.now(),
-        });
         if (ambiguous) {
+          await patchItem(current.id, {
+            status: 'ambiguous',
+            error:
+              'The paid request may have reached Flow, but no media ID was returned. Inspect the Flow project before choosing to resubmit.',
+            finishedAt: Date.now(),
+          });
           await chrome.storage.local.set({ [PAUSED_KEY]: true });
           await writeStatus('Paid submission needs review; the video queue is paused.', 'err');
           break;
         }
+        if (isTemporaryLimit(error)) {
+          await requeueForCooldown(current.id);
+          if (settings.providerCooldown.autoResume) {
+            const resumeAt = Date.now() + settings.providerCooldown.minutes * 60 * 1000;
+            await chrome.storage.local.set({ [COOLDOWN_KEY]: resumeAt });
+            await writeStatus('Generation service limit reached; resuming automatically.', 'info', {
+              countdownUntil: resumeAt,
+              countdownReason: 'cooldown',
+              countdownLabel: latest.label,
+            });
+            createAlarm();
+          } else {
+            await chrome.storage.local.set({ [PAUSED_KEY]: true });
+            await writeStatus('Generation service limit reached; queue paused for review.', 'info');
+          }
+          break;
+        }
+        await patchItem(current.id, {
+          status: 'failed',
+          error: String(error?.message || error),
+          finishedAt: Date.now(),
+        });
       } finally {
         if (providerAttempted) await setNextRun(settings);
       }
@@ -387,7 +449,7 @@ async function retryItem(id, acceptAmbiguousRisk = false) {
 
 async function clearQueue() {
   const queue = await getQueue();
-  await setQueue(queue.filter((item) => item.status === 'running'));
+  await setQueue(queue.filter((item) => item.status !== 'pending'));
   return { ok: true };
 }
 
@@ -420,10 +482,11 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   switch (message?.type) {
     case 'getQueue':
       reply(
-        Promise.all([getQueue(), isPaused()]).then(([queue, paused]) => ({
+        Promise.all([getQueue(), isPaused(), chrome.storage.local.get(COOLDOWN_KEY)]).then(([queue, paused, stored]) => ({
           ok: true,
           queue,
           paused,
+          cooldownUntil: Number(stored[COOLDOWN_KEY]) || 0,
         }))
       );
       return true;
@@ -435,7 +498,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       return true;
     case 'resumeQueue':
       reply(
-        chrome.storage.local.remove(PAUSED_KEY).then(() => {
+        chrome.storage.local.remove([PAUSED_KEY, COOLDOWN_KEY]).then(() => {
           createAlarm();
           processQueue();
           return { ok: true };

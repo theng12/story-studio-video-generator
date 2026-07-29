@@ -12,6 +12,9 @@ export const DEFAULTS = {
   filenameTemplate: '{episodeCode}_{sceneId}',
   humanDelayMinSec: 5,
   humanDelayMaxSec: 60,
+  // A temporary service limit can either pause the queue for review or wait
+  // before safely retrying work that never reached paid submission.
+  providerCooldown: { autoResume: false, minutes: 15 },
   lastProject: '',
   lastEpisode: '',
 };
@@ -33,6 +36,11 @@ function normalize(settings) {
   const second = Math.max(0, Math.min(3600, Math.round(Number(settings.humanDelayMaxSec) || 0)));
   settings.humanDelayMinSec = Math.min(first, second);
   settings.humanDelayMaxSec = Math.max(first, second);
+  const cooldown = settings.providerCooldown || {};
+  settings.providerCooldown = {
+    autoResume: cooldown.autoResume === true,
+    minutes: Math.max(1, Math.min(1440, Math.round(Number(cooldown.minutes) || 15))),
+  };
   settings.flowProjectId = normalizeFlowProjectId(settings.flowProjectId);
   if (!['existing', 'generate'].includes(settings.videoSource)) settings.videoSource = DEFAULTS.videoSource;
   if (!['16:9', '9:16'].includes(settings.aspectRatio)) settings.aspectRatio = DEFAULTS.aspectRatio;
