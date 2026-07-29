@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.17
+
+- Removed duplicated workspace, provider, and pacing controls from global
+  Settings; those batch-specific choices now live only in the side panel.
+
 ## 1.0.16
 
 - Added site-access and connection testing to Story Studio Settings.

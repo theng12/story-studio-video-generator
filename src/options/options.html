@@ -68,50 +68,8 @@
         </section>
       </details>
 
-      <details class="advanced-panel settings-section" open>
-        <summary>Generation and video</summary>
-        <section class="settings-card">
-          <label>Workspace ID
-            <input id="flowProjectId" />
-          </label>
-          <div class="form-grid form-grid-two">
-            <label>Video model
-              <select id="videoModel">
-                <option value="omni-flash">Omni Flash</option>
-                <option value="veo-3.1-lite">Veo 3.1 Lite</option>
-                <option value="veo-3.1-fast">Veo 3.1 Fast</option>
-                <option value="veo-3.1-quality">Veo 3.1 Quality</option>
-              </select>
-            </label>
-            <label>Start image
-              <select id="videoSource">
-                <option value="existing">Existing scene image</option>
-                <option value="generate">Generate a fresh image first</option>
-              </select>
-            </label>
-          </div>
-          <label>Aspect ratio
-            <select id="aspectRatio">
-              <option value="16:9">16:9</option>
-              <option value="9:16">9:16</option>
-            </select>
-          </label>
-        </section>
-      </details>
-
-      <details class="advanced-panel settings-section" open>
-        <summary>Queue pacing</summary>
-        <section class="settings-card">
-          <div class="form-grid form-grid-two">
-            <label>Minimum delay (seconds)
-              <input id="humanDelayMinSec" type="number" min="0" max="3600" />
-            </label>
-            <label>Maximum delay (seconds)
-              <input id="humanDelayMaxSec" type="number" min="0" max="3600" />
-            </label>
-          </div>
-        </section>
-      </details>
+      <!-- Workspace, provider settings, and queue pacing are configured in the
+           side panel, next to the batch they affect. -->
 
       <div class="row settings-footer">
         <span id="status" class="muted small" aria-live="polite"></span>

@@ -12,12 +12,6 @@ const $ = (id) => document.getElementById(id);
 const FIELDS = [
   'theme',
   'studioBaseUrl',
-  'flowProjectId',
-  'videoModel',
-  'videoSource',
-  'aspectRatio',
-  'humanDelayMinSec',
-  'humanDelayMaxSec',
 ];
 
 let autoSaveTimer = null;
