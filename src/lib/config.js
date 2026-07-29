@@ -1,4 +1,5 @@
 export const DEFAULTS = {
+  theme: 'system',
   studioBaseUrl: 'http://localhost:8766',
   flowProjectId: '',
   flowProjectName: '',

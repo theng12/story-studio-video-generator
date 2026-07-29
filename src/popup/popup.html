@@ -2,27 +2,73 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Story Studio Video Generator</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="stylesheet" href="popup.css" />
+    <title>Story Studio Video Generator</title>
+    <script src="../lib/theme-preload.js"></script>
   </head>
   <body>
     <header>
-      <div>
+      <div class="header-brand">
         <h1>Story Studio Video Generator</h1>
-        <div id="version" class="muted"></div>
+        <span id="extensionVersion" class="version-badge" title="Installed extension version"></span>
       </div>
-      <button id="openOptions" class="secondary">Settings</button>
+      <div class="header-actions">
+        <button id="whatsNew" class="link small whats-new" title="What changed recently">
+          ✨ What's new<span id="whatsNewDot" class="ndot" hidden></span>
+        </button>
+        <button id="openOptions" class="link settings-gear" title="Open settings" aria-label="Open settings">⚙</button>
+      </div>
     </header>
 
-    <section class="card warning">
-      <strong>Paid generation</strong>
-      <span>Every queued clip can spend Flow/Veo credits. Submission is sequential and requires confirmation.</span>
+    <section id="activityPanel" class="activity-panel" aria-live="polite">
+      <div class="activity-inner">
+        <div class="batch-head">
+          <span>Active batch</span>
+          <span id="activityElapsed" hidden></span>
+        </div>
+        <div id="genStatusBar" class="genstatus idle">
+          <span class="gs-state"><span class="gs-dot"></span><span id="gsStateText">Ready</span></span>
+          <span id="gsCounts" class="gs-counts" hidden>
+            <span class="gs-done" id="gsDone">0 done</span>
+            <span class="gs-failed" id="gsFailed">0 failed</span>
+            <span class="gs-left" id="gsLeft">0 left</span>
+          </span>
+        </div>
+        <div class="activity-copy">
+          <span id="activeJob" class="activity-job">Ready to generate video</span>
+          <span id="activeJobMeta" class="activity-meta">Choose scenes, then queue them.</span>
+        </div>
+        <div class="activity-progress-row">
+          <div class="activity-progress" aria-hidden="true"><span id="activityProgressFill"></span></div>
+          <span id="activityProgressText">0%</span>
+        </div>
+        <div id="queueControls" class="queue-actions" hidden>
+          <button id="pauseQueue" hidden>Pause</button>
+          <button id="retryFailed" hidden>Retry failed</button>
+          <button id="clearQueue">Clear queue</button>
+        </div>
+        <div id="queueDetail" hidden>
+          <div class="queue-table-head"><span id="queueInfo">Queue</span><span>Status</span></div>
+          <ul id="queueList" class="queuelist" hidden></ul>
+          <div class="queue-legend" aria-label="Queue status legend">
+            <span class="pending">◌ Pending</span>
+            <span class="running">◌ Running</span>
+            <span class="done">✓ Done</span>
+            <span class="failed">! Failed</span>
+            <span class="ambiguous">! Review</span>
+          </div>
+        </div>
+      </div>
     </section>
 
-    <section class="card grid">
-      <label>
-        <span>Video model</span>
+    <div class="credit-note">
+      <strong>Account credits</strong>
+      <span>Each queued video may use credits. Review every batch before starting.</span>
+    </div>
+
+    <div class="form-grid form-grid-two">
+      <label>Video model
         <select id="videoModel">
           <option value="omni-flash">Omni Flash — audio</option>
           <option value="veo-3.1-lite">Veo 3.1 Lite</option>
@@ -30,79 +76,111 @@
           <option value="veo-3.1-quality">Veo 3.1 Quality</option>
         </select>
       </label>
-      <label>
-        <span>Start image</span>
+      <label>Start image
         <select id="videoSource">
           <option value="existing">Existing scene image</option>
           <option value="generate">Generate a fresh image first</option>
         </select>
       </label>
-      <label>
-        <span>Aspect ratio</span>
-        <select id="aspectRatio">
-          <option value="16:9">16:9</option>
-          <option value="9:16">9:16</option>
-        </select>
-      </label>
-      <label>
-        <span>Save to</span>
-        <select id="saveTarget">
-          <option value="project">Story Studio “11 Video Assets”</option>
-          <option value="download">Downloads</option>
-        </select>
-      </label>
-    </section>
+    </div>
 
-    <section class="card">
-      <div class="row between">
-        <div>
-          <strong>Flow project</strong>
-          <div id="flowProject" class="muted">None selected</div>
+    <div class="row end open-provider-row">
+      <button id="openFlow" class="link small" title="Open the generation workspace">↗ Open workspace</button>
+    </div>
+
+    <details class="advanced-panel workspace-panel">
+      <summary>
+        <span>Generation workspace</span>
+        <span id="flowProject" class="summary-state">None selected</span>
+      </summary>
+      <section class="context-card">
+        <p class="muted">Use a signed-in workspace for this batch.</p>
+        <div class="workspace-actions">
+          <button id="useFlow">Use current tab</button>
+          <button id="newFlow">New workspace</button>
         </div>
-        <div class="row">
-          <button id="openFlow" class="secondary">Open Flow</button>
-          <button id="useFlow" class="secondary">Use current tab</button>
-          <button id="newFlow" class="secondary">New</button>
-        </div>
-      </div>
-    </section>
+      </section>
+    </details>
 
-    <section class="card">
-      <label>
-        <span>Story Studio project</span>
-        <select id="project"></select>
-      </label>
-      <label>
-        <span>Episode</span>
-        <select id="episode"></select>
-      </label>
-      <div class="row">
-        <button id="loadScenes">Load eligible scenes</button>
-        <button id="selectMissing" class="secondary">Select missing</button>
+    <section id="companionPane">
+      <div class="form-grid form-grid-two">
+        <label>Project
+          <select id="project"></select>
+        </label>
+        <label>Episode
+          <select id="episode"></select>
+        </label>
       </div>
-      <div id="scenes" class="scenes"></div>
-      <button id="queueSelected" disabled>Queue selected</button>
-    </section>
-
-    <section class="card">
-      <div class="row between">
-        <strong>Video queue</strong>
-        <div class="row">
-          <button id="pauseQueue" class="secondary">Pause</button>
-          <button id="clearQueue" class="danger">Clear waiting</button>
+      <div class="row between section-head">
+        <span class="muted" id="scenesSummary">Eligible scenes</span>
+        <div class="hgroup">
+          <button id="loadScenes" class="link small">Load scenes</button>
+          <button id="selectMissing" class="link small">Select missing</button>
         </div>
       </div>
-      <div id="status" class="status muted">Idle.</div>
-      <div id="queue" class="queue"></div>
+      <div id="scenes" class="sectionlist"></div>
     </section>
 
-    <div id="confirm" class="modal hidden">
+    <details class="advanced-panel">
+      <summary>Video settings</summary>
+      <section class="settings-card">
+        <label>Aspect ratio
+          <select id="aspectRatio">
+            <option value="16:9">16:9</option>
+            <option value="9:16">9:16</option>
+          </select>
+        </label>
+      </section>
+    </details>
+
+    <label>Save to
+      <select id="saveTarget">
+        <option value="project">Story Studio project folder</option>
+        <option value="download">Downloads folder</option>
+      </select>
+    </label>
+
+    <div class="batch-actions">
+      <button id="queueSelected" class="primary" disabled>Queue selected</button>
+    </div>
+
+    <details class="advanced-panel">
+      <summary>Human pace</summary>
+      <section class="pace-card">
+        <div class="row between">
+          <span class="muted small">Gap between generations</span>
+          <span id="humanPaceState" class="pace-state" aria-live="polite"></span>
+        </div>
+        <div class="row pace-custom">
+          <label class="grow"><span class="mini">Min seconds</span>
+            <input id="humanDelayMinSec" type="number" min="0" max="3600" step="1" />
+          </label>
+          <label class="grow"><span class="mini">Max seconds</span>
+            <input id="humanDelayMaxSec" type="number" min="0" max="3600" step="1" />
+          </label>
+        </div>
+      </section>
+    </details>
+
+    <p id="status" class="muted"></p>
+
+    <div id="whatsNewModal" class="overlay" hidden>
+      <div class="dialog wide">
+        <div class="row between">
+          <div class="dlgtitle">What's new</div>
+          <button id="whatsNewClose" class="link" aria-label="Close">✕</button>
+        </div>
+        <div id="whatsNewBody" class="changelog"></div>
+      </div>
+    </div>
+
+    <div id="confirm" class="overlay" hidden>
       <div class="dialog">
-        <h2 id="confirmTitle">Confirm paid generation</h2>
-        <p id="confirmBody"></p>
+        <div class="dlgtitle" id="confirmTitle">Confirm video generation</div>
+        <div class="muted" id="confirmBody"></div>
         <div class="row end">
-          <button id="confirmCancel" class="secondary">Cancel</button>
-          <button id="confirmOk" class="danger">Spend credits & queue</button>
+          <button id="confirmCancel">Cancel</button>
+          <button id="confirmOk" class="primary">Use credits &amp; queue</button>
         </div>
       </div>
     </div>
