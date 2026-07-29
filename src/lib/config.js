@@ -3,6 +3,9 @@ export const DEFAULTS = {
   studioBaseUrl: 'http://localhost:8766',
   flowProjectId: '',
   flowProjectName: '',
+  // Stored separately from the workspace so additional generation backends can
+  // be added later without changing existing queue items.
+  videoProvider: 'workspace',
   videoModel: 'veo-3.1-fast',
   videoSource: 'existing',
   imageModel: 'nano-banana-2',
@@ -42,6 +45,7 @@ function normalize(settings) {
     minutes: Math.max(1, Math.min(1440, Math.round(Number(cooldown.minutes) || 15))),
   };
   settings.flowProjectId = normalizeFlowProjectId(settings.flowProjectId);
+  if (!['workspace'].includes(settings.videoProvider)) settings.videoProvider = DEFAULTS.videoProvider;
   if (!['existing', 'generate'].includes(settings.videoSource)) settings.videoSource = DEFAULTS.videoSource;
   if (!['16:9', '9:16'].includes(settings.aspectRatio)) settings.aspectRatio = DEFAULTS.aspectRatio;
   if (!['project', 'download'].includes(settings.saveTarget)) settings.saveTarget = DEFAULTS.saveTarget;

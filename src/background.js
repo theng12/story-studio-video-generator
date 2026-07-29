@@ -311,6 +311,7 @@ async function enqueueScenes(payload) {
       imagePrompt: scene.imagePrompt || '',
       durationSec: scene.durationSec,
       projectId,
+      videoProvider: payload.videoProvider || settings.videoProvider,
       videoModel: payload.videoModel || settings.videoModel,
       videoSource: payload.videoSource || settings.videoSource,
       imageModel: settings.imageModel,

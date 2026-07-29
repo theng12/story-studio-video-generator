@@ -246,6 +246,7 @@ function confirmQueue() {
           episodeTitle: episode?.title || '',
           projectId: settings.flowProjectId,
           target: settings.saveTarget,
+          videoProvider: settings.videoProvider,
           videoModel: settings.videoModel,
           videoSource: settings.videoSource,
           aspectRatio: settings.aspectRatio,
@@ -645,6 +646,7 @@ async function init() {
 
   settings = await getSettings();
   studio = new StudioClient(settings.studioBaseUrl);
+  $('videoProvider').value = settings.videoProvider;
   $('videoModel').value = settings.videoModel;
   $('videoSource').value = settings.videoSource;
   $('aspectRatio').value = settings.aspectRatio;
@@ -705,7 +707,7 @@ async function init() {
     await pollQueue();
   });
 
-  for (const field of ['videoModel', 'videoSource', 'aspectRatio', 'saveTarget']) {
+  for (const field of ['videoProvider', 'videoModel', 'videoSource', 'aspectRatio', 'saveTarget']) {
     $(field).addEventListener('change', async () => {
       settings = await saveSettings({ [field]: $(field).value });
     });

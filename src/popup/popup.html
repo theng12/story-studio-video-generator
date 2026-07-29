@@ -67,8 +67,13 @@
       <span>Each queued video may use credits. Review every batch before starting.</span>
     </div>
 
-    <div class="form-grid form-grid-two">
-      <label>Video model
+    <div class="form-grid form-grid-three">
+      <label>Provider
+        <select id="videoProvider">
+          <option value="workspace">Connected workspace</option>
+        </select>
+      </label>
+      <label>Video
         <select id="videoModel">
           <option value="omni-flash">Omni Flash — audio</option>
           <option value="veo-3.1-lite">Veo 3.1 Lite</option>
@@ -76,10 +81,10 @@
           <option value="veo-3.1-quality">Veo 3.1 Quality</option>
         </select>
       </label>
-      <label>Start image
-        <select id="videoSource">
-          <option value="existing">Existing scene image</option>
-          <option value="generate">Generate a fresh image first</option>
+      <label>Save to
+        <select id="saveTarget">
+          <option value="project">Story Studio project folder</option>
+          <option value="download">Downloads folder</option>
         </select>
       </label>
     </div>
@@ -124,6 +129,12 @@
     <details class="advanced-panel">
       <summary>Video settings</summary>
       <section class="settings-card">
+        <label>Start image
+          <select id="videoSource">
+            <option value="existing">Existing scene image</option>
+            <option value="generate">Generate a fresh image first</option>
+          </select>
+        </label>
         <label>Aspect ratio
           <select id="aspectRatio">
             <option value="16:9">16:9</option>
@@ -132,13 +143,6 @@
         </label>
       </section>
     </details>
-
-    <label>Save to
-      <select id="saveTarget">
-        <option value="project">Story Studio project folder</option>
-        <option value="download">Downloads folder</option>
-      </select>
-    </label>
 
     <div class="batch-actions">
       <button id="queueSelected" class="primary" disabled>Queue selected</button>

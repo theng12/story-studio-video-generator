@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.3
+
+- Standardized the primary video setup controls.
+
 ## 1.0.2
 
 - Added queue pacing, cooldown, and recovery controls.

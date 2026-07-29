@@ -232,6 +232,7 @@ label {
 }
 .form-grid { display: grid; gap: 10px; }
 .form-grid-two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.form-grid-three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .form-grid > label { margin-top: 0; }
 
 select,
@@ -533,6 +534,7 @@ label.check input { width: auto; margin: 0; flex: none; }
 
 @media (max-width: 340px) {
   .form-grid-two,
+  .form-grid-three,
   .workspace-actions,
   .queue-actions { grid-template-columns: 1fr; }
   .activity-meta { white-space: normal; }
