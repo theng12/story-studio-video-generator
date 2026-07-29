@@ -318,7 +318,7 @@ header .settings-gear:focus-visible { outline: 2px solid var(--accent); outline-
 #connStatus { text-align: right; }
 .standalone-hint { margin: 8px 0 0; line-height: 1.4; }
 .open-provider-row { margin-top: 4px; }
-#openFlow { color: var(--link); }
+#openFlow { padding: 5px 8px; }
 
 .advanced-panel {
   margin-top: 10px;

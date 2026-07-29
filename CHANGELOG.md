@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.12
+
+- Standardized the workspace action button.
+
 ## 1.0.11
 
 - Added Story Studio and standalone prompt working modes.
