@@ -16,9 +16,6 @@ const FIELDS = [
   'videoModel',
   'videoSource',
   'aspectRatio',
-  'saveTarget',
-  'downloadSubdir',
-  'filenameTemplate',
   'humanDelayMinSec',
   'humanDelayMaxSec',
 ];

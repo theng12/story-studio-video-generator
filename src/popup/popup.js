@@ -297,7 +297,6 @@ function confirmQueue() {
           episodeCode: $('episode').value,
           episodeTitle: episode?.title || '',
           projectId: settings.flowProjectId,
-          target: settings.saveTarget,
           videoProvider: settings.videoProvider,
           videoModel: settings.videoModel,
           videoSource: settings.videoSource,
@@ -366,6 +365,7 @@ function phaseLabel(phase) {
     submitting: 'Submitting request',
     polling: 'Generating video',
     downloading: 'Saving video',
+    ingesting: 'Saving to Story Studio',
     done: 'Saved',
   }[phase] || 'Processing';
 }
@@ -432,7 +432,7 @@ function renderQueue(queue, state, live) {
   if (running) {
     $('activeJob').textContent = running.label;
     $('activeJobMeta').textContent =
-      `${phaseLabel(running.phase)} · ${running.target === 'project' ? 'Story Studio' : 'Downloads'}`;
+      `${phaseLabel(running.phase)} · Story Studio`;
   } else if (counts.ambiguous) {
     $('activeJob').textContent = 'A video needs review';
     $('activeJobMeta').textContent = 'The request may already exist. Inspect the workspace before resubmitting.';
@@ -725,7 +725,6 @@ async function init() {
   $('videoModel').value = settings.videoModel;
   $('videoSource').value = settings.videoSource;
   $('aspectRatio').value = settings.aspectRatio;
-  $('saveTarget').value = settings.saveTarget;
   renderWorkspace();
   renderHumanPace();
   renderCooldownCard();
@@ -783,7 +782,7 @@ async function init() {
     await pollQueue();
   });
 
-  for (const field of ['videoProvider', 'videoModel', 'videoSource', 'aspectRatio', 'saveTarget']) {
+  for (const field of ['videoProvider', 'videoModel', 'videoSource', 'aspectRatio']) {
     $(field).addEventListener('change', async () => {
       settings = await saveSettings({ [field]: $(field).value });
     });

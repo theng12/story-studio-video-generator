@@ -9,15 +9,14 @@ A Chrome extension for turning Story Studio scenes into organized video files.
   settings for a batch.
 - Runs selected work through a persistent queue with progress, pause, retry, and
   recovery controls.
-- Saves finished videos to the connected project workspace or the browser
-  Downloads folder.
+- Saves finished videos to the connected project workspace.
 
 ## Workflow
 
 1. Open the side panel and connect a Story Studio project.
 2. Select an episode, then choose the scenes and settings for the batch.
 3. Queue the selected work and monitor its status in the active batch view.
-4. Let the extension save each completed video to the chosen destination.
+4. Let the extension save each completed video to the project workspace.
 
 ## Availability
 
@@ -36,7 +35,6 @@ There is no build step.
 ## Notes
 
 - The extension works with a running Story Studio workspace.
-- The chosen destination controls whether finished files return to the project
-  or the browser Downloads folder.
+- Finished videos are ingested into their Story Studio scenes.
 - The queue is designed to survive closing and reopening the side panel.
 - Interrupted work may require review before it can be retried.

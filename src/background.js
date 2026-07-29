@@ -1,6 +1,5 @@
 import { getSettings, saveSettings, normalizeFlowProjectId } from './lib/config.js';
 import { StudioClient } from './lib/story-studio.js';
-import { buildDownloadPath } from './lib/naming.js';
 import { flowCommand } from './lib/flow-exec.js';
 
 const FLOW_URL = 'https://labs.google/fx/tools/flow';
@@ -106,21 +105,12 @@ async function createFlowProject() {
   return { ok: true, ...created };
 }
 
-function bufferToBase64(buffer) {
-  const bytes = new Uint8Array(buffer);
-  let binary = '';
-  for (let i = 0; i < bytes.length; i += 0x8000) {
-    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
-  }
-  return btoa(binary);
-}
-
-async function downloadVideo(mediaId) {
+async function fetchVideo(mediaId) {
   const endpoint =
     `https://labs.google/fx/api/trpc/media.getMediaUrlRedirect` +
     `?name=${encodeURIComponent(mediaId)}&mediaUrlType=MEDIA_URL_TYPE_FULL_MEDIA`;
   const response = await fetch(endpoint, { credentials: 'include' });
-  if (!response.ok) throw new Error(`Video download failed (${response.status}).`);
+  if (!response.ok) throw new Error(`Video retrieval failed (${response.status}).`);
   const mediaUrl = new URL(response.url);
   if (
     mediaUrl.protocol !== 'https:' ||
@@ -132,8 +122,8 @@ async function downloadVideo(mediaId) {
   const contentType = response.headers.get('content-type') || '';
   if (!contentType.startsWith('video/')) throw new Error('Flow returned a non-video asset.');
   const buffer = await response.arrayBuffer();
-  if (!buffer.byteLength) throw new Error('Downloaded video was empty.');
-  if (buffer.byteLength > 256 * 1024 * 1024) throw new Error('Downloaded video exceeded 256 MB.');
+  if (!buffer.byteLength) throw new Error('Retrieved video was empty.');
+  if (buffer.byteLength > 256 * 1024 * 1024) throw new Error('Retrieved video exceeded 256 MB.');
   return buffer;
 }
 
@@ -263,20 +253,10 @@ async function generateAndSave(item, settings, tab) {
     await sleep(10000);
   }
 
-  await patchItem(item.id, { phase: 'downloading' });
-  const mp4 = await downloadVideo(item.videoMediaId);
-  if (item.target === 'project') {
-    await studio.uploadClip(item.slug, item.episodeCode, item.sceneId, mp4);
-    return `${item.sceneId}.mp4`;
-  }
-  const filename = item.downloadPath.replace(/\.(mp4|webm)$/i, '') + '.mp4';
-  await chrome.downloads.download({
-    url: `data:video/mp4;base64,${bufferToBase64(mp4)}`,
-    filename,
-    saveAs: false,
-    conflictAction: 'uniquify',
-  });
-  return filename;
+  await patchItem(item.id, { phase: 'ingesting' });
+  const mp4 = await fetchVideo(item.videoMediaId);
+  await studio.uploadClip(item.slug, item.episodeCode, item.sceneId, mp4);
+  return `${item.sceneId}.mp4`;
 }
 
 function itemKey(item) {
@@ -316,18 +296,6 @@ async function enqueueScenes(payload) {
       videoSource: payload.videoSource || settings.videoSource,
       imageModel: settings.imageModel,
       aspectRatio: payload.aspectRatio || settings.aspectRatio,
-      target: payload.target || settings.saveTarget,
-      downloadPath: buildDownloadPath(
-        settings,
-        {
-          project: payload.projectName || payload.slug,
-          episodeCode: payload.episodeCode,
-          episodeTitle: payload.episodeTitle || '',
-          sceneId: scene.id,
-          sceneIndex: scene.sceneIndex ?? scene.id,
-        },
-        'mp4'
-      ),
     };
     if (active.has(itemKey(item))) {
       skipped++;

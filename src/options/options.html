@@ -89,20 +89,8 @@
       </details>
 
       <details class="advanced-panel settings-section" open>
-        <summary>Saving and pacing</summary>
+        <summary>Queue pacing</summary>
         <section class="settings-card">
-          <label>Default save target
-            <select id="saveTarget">
-              <option value="project">Story Studio project folder</option>
-              <option value="download">Downloads folder</option>
-            </select>
-          </label>
-          <label>Downloads subfolder
-            <input id="downloadSubdir" />
-          </label>
-          <label>Filename template
-            <input id="filenameTemplate" />
-          </label>
           <div class="form-grid form-grid-two">
             <label>Minimum delay (seconds)
               <input id="humanDelayMinSec" type="number" min="0" max="3600" />
@@ -111,7 +99,6 @@
               <input id="humanDelayMaxSec" type="number" min="0" max="3600" />
             </label>
           </div>
-          <p class="hint">Filename tokens: {project}, {episodeCode}, {episodeTitle}, {sceneId}, {sceneIndex}</p>
         </section>
       </details>
 

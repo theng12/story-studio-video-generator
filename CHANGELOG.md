@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.14
+
+- Made Story Studio the only completed-video destination.
+
 ## 1.0.13
 
 - Removed the external prompt workflow; video generation now uses Story Studio scenes.
@@ -52,4 +56,4 @@
 
 - Initial video generation release.
 - Guided generation from Story Studio scenes.
-- Saves completed assets to Story Studio or Downloads.
+- Saves completed assets to Story Studio.
