@@ -71,11 +71,8 @@
         </select>
       </label>
       <label>Video
-        <select id="videoModel">
-          <option value="omni-flash">Omni Flash — audio</option>
-          <option value="veo-3.1-lite">Veo 3.1 Lite</option>
-          <option value="veo-3.1-fast">Veo 3.1 Fast</option>
-          <option value="veo-3.1-quality">Veo 3.1 Quality</option>
+        <select id="assetType" disabled aria-label="Video asset type">
+          <option value="scene-videos">Scene videos</option>
         </select>
       </label>
       <label>Save to
@@ -92,7 +89,7 @@
 
     <details class="advanced-panel workspace-panel">
       <summary>
-        <span>Provider settings</span>
+        <span>Generation workspace</span>
         <span id="flowProject" class="summary-state">None selected</span>
       </summary>
       <section class="context-card">
@@ -127,9 +124,20 @@
       <div id="scenes" class="sectionlist"></div>
     </section>
 
-    <details class="advanced-panel">
-      <summary>Video settings</summary>
+    <details class="advanced-panel provider-settings-panel">
+      <summary>
+        <span>Provider settings</span>
+        <span class="summary-state">Model · ratio · input</span>
+      </summary>
       <section class="settings-card">
+        <label>Video model
+          <select id="videoModel">
+            <option value="omni-flash">Omni Flash — audio</option>
+            <option value="veo-3.1-lite">Veo 3.1 Lite</option>
+            <option value="veo-3.1-fast">Veo 3.1 Fast</option>
+            <option value="veo-3.1-quality">Veo 3.1 Quality</option>
+          </select>
+        </label>
         <label>Start image
           <select id="videoSource">
             <option value="existing">Existing scene image</option>

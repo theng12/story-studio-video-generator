@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.9
+
+- Corrected the generation workspace and provider settings hierarchy.
+
 ## 1.0.8
 
 - Added a compact applied queue-settings summary.
