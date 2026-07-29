@@ -9,6 +9,8 @@
 .settings-page .settings-section label:first-of-type { margin-top: 0; }
 .settings-page .settings-section input,
 .settings-page .settings-section select { min-height: 38px; margin-top: 5px; border-radius: 8px; font-size: 14px; }
+.settings-page .settings-section label.toggle-row { display: flex; align-items: center; gap: 8px; margin-top: 12px; color: var(--fg); }
+.settings-page .settings-section label.toggle-row input { width: auto; min-height: 0; margin: 0; }
 .settings-page .settings-section .row { margin-top: 12px; }
 .settings-page .settings-section .settings-card { padding: 12px 0 0; }
 .settings-page .settings-section summary { min-height: 22px; padding: 0; color: var(--fg); font-size: 14px; font-weight: 650; }
