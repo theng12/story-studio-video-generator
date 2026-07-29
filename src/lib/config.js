@@ -1,5 +1,6 @@
 export const DEFAULTS = {
   theme: 'system',
+  mode: 'studio',
   studioBaseUrl: 'http://localhost:8766',
   flowProjectId: '',
   flowProjectName: '',
@@ -10,6 +11,7 @@ export const DEFAULTS = {
   videoSource: 'existing',
   imageModel: 'nano-banana-2',
   aspectRatio: '16:9',
+  saveTarget: 'project',
   humanDelayMinSec: 5,
   humanDelayMaxSec: 60,
   // A temporary service limit can either pause the queue for review or wait
@@ -32,10 +34,6 @@ export function normalizeFlowProjectId(value) {
 }
 
 function normalize(settings) {
-  delete settings.mode;
-  delete settings.saveTarget;
-  delete settings.downloadSubdir;
-  delete settings.filenameTemplate;
   const first = Math.max(0, Math.min(3600, Math.round(Number(settings.humanDelayMinSec) || 0)));
   const second = Math.max(0, Math.min(3600, Math.round(Number(settings.humanDelayMaxSec) || 0)));
   settings.humanDelayMinSec = Math.min(first, second);
@@ -46,6 +44,8 @@ function normalize(settings) {
     minutes: Math.max(1, Math.min(1440, Math.round(Number(cooldown.minutes) || 15))),
   };
   settings.flowProjectId = normalizeFlowProjectId(settings.flowProjectId);
+  if (!['studio', 'standalone'].includes(settings.mode)) settings.mode = DEFAULTS.mode;
+  if (!['project', 'download'].includes(settings.saveTarget)) settings.saveTarget = DEFAULTS.saveTarget;
   if (!['workspace'].includes(settings.videoProvider)) settings.videoProvider = DEFAULTS.videoProvider;
   if (!['existing', 'generate'].includes(settings.videoSource)) settings.videoSource = DEFAULTS.videoSource;
   if (!['16:9', '9:16'].includes(settings.aspectRatio)) settings.aspectRatio = DEFAULTS.aspectRatio;
@@ -54,18 +54,7 @@ function normalize(settings) {
 
 export async function getSettings() {
   const stored = await chrome.storage.sync.get(STORAGE_KEY);
-  const saved = stored[STORAGE_KEY] || {};
-  const {
-    mode: _removedMode,
-    saveTarget: _removedSaveTarget,
-    downloadSubdir: _removedDownloadSubdir,
-    filenameTemplate: _removedFilenameTemplate,
-    ...current
-  } = saved;
-  if (['mode', 'saveTarget', 'downloadSubdir', 'filenameTemplate'].some((key) => Object.hasOwn(saved, key))) {
-    await chrome.storage.sync.set({ [STORAGE_KEY]: current });
-  }
-  return normalize({ ...DEFAULTS, ...current });
+  return normalize({ ...DEFAULTS, ...(stored[STORAGE_KEY] || {}) });
 }
 
 export async function saveSettings(patch) {

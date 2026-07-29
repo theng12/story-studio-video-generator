@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.23
+
+- Restored Standalone mode for local video prompts, with completed files saved to Downloads.
+
 ## 1.0.22
 
 - Aligned the side-panel workflow with Image Generator: Provider settings,

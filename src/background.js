@@ -127,6 +127,15 @@ async function fetchVideo(mediaId) {
   return buffer;
 }
 
+function bufferToBase64(buffer) {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  for (let index = 0; index < bytes.length; index += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000));
+  }
+  return btoa(binary);
+}
+
 async function waitForPacing(settings, item) {
   for (;;) {
     const nextRunAt = Number((await chrome.storage.local.get(NEXT_RUN_KEY))[NEXT_RUN_KEY]) || 0;
@@ -253,8 +262,18 @@ async function generateAndSave(item, settings, tab) {
     await sleep(10000);
   }
 
-  await patchItem(item.id, { phase: 'ingesting' });
+  await patchItem(item.id, { phase: item.target === 'download' ? 'downloading' : 'ingesting' });
   const mp4 = await fetchVideo(item.videoMediaId);
+  if (item.target === 'download') {
+    const filename = `${String(item.downloadPath || 'StoryStudioVideos/Standalone/video.mp4').replace(/\.(mp4|webm)$/i, '')}.mp4`;
+    await chrome.downloads.download({
+      url: `data:video/mp4;base64,${bufferToBase64(mp4)}`,
+      filename,
+      saveAs: false,
+      conflictAction: 'uniquify',
+    });
+    return filename;
+  }
   await studio.uploadClip(item.slug, item.episodeCode, item.sceneId, mp4);
   return `${item.sceneId}.mp4`;
 }
@@ -312,6 +331,54 @@ async function enqueueScenes(payload) {
     processQueue();
   }
   return { ok: true, added, skipped };
+}
+
+function standaloneSceneId(prompt) {
+  let hash = 5381;
+  for (const char of String(prompt).trim()) hash = ((hash << 5) + hash) ^ char.charCodeAt(0);
+  return `standalone_${(hash >>> 0).toString(36)}`;
+}
+
+async function enqueueStandalone(payload) {
+  const settings = await getSettings();
+  const projectId = normalizeFlowProjectId(payload?.projectId || settings.flowProjectId);
+  const prompt = String(payload?.prompt || '').trim();
+  if (!projectId) throw new Error('Select a generation workspace before queuing a video.');
+  if (!prompt) throw new Error('Enter a video prompt before queuing.');
+  const sceneId = standaloneSceneId(prompt);
+  const queue = await getQueue();
+  const item = {
+    id: `${Date.now()}_${sequence++}`,
+    status: 'pending',
+    phase: 'queued',
+    queuedAt: Date.now(),
+    slug: 'standalone',
+    projectName: 'Standalone',
+    episodeCode: 'Standalone',
+    episodeTitle: '',
+    sceneId,
+    label: 'Standalone video',
+    motionPrompt: prompt,
+    imagePrompt: prompt,
+    durationSec: 4,
+    projectId,
+    videoProvider: payload.videoProvider || settings.videoProvider,
+    videoModel: payload.videoModel || settings.videoModel,
+    videoSource: 'generate',
+    imageModel: settings.imageModel,
+    aspectRatio: payload.aspectRatio || settings.aspectRatio,
+    target: 'download',
+    downloadPath: `StoryStudioVideos/Standalone/${sceneId}.mp4`,
+  };
+  if (queue.some((candidate) => ['pending', 'running'].includes(candidate.status) && itemKey(candidate) === itemKey(item))) {
+    return { ok: true, added: 0, skipped: 1 };
+  }
+  queue.push(item);
+  await setQueue(queue);
+  await chrome.storage.local.remove(PAUSED_KEY);
+  createAlarm();
+  processQueue();
+  return { ok: true, added: 1, skipped: 0 };
 }
 
 async function processQueue() {
@@ -461,6 +528,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       return true;
     case 'enqueueScenes':
       reply(enqueueScenes(message.payload));
+      return true;
+    case 'enqueueStandalone':
+      reply(enqueueStandalone(message.payload));
       return true;
     case 'pauseQueue':
       reply(chrome.storage.local.set({ [PAUSED_KEY]: true }).then(() => ({ ok: true })));

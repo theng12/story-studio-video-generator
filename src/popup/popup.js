@@ -81,6 +81,38 @@ function updateQueueButton() {
   $('queueSelected').textContent = count ? `Queue selected (${count})` : 'Queue selected';
 }
 
+function isStandaloneMode() {
+  return settings?.mode === 'standalone';
+}
+
+function updateStandaloneQueueButton() {
+  const ready = Boolean($('standalonePrompt').value.trim());
+  $('queueStandalone').disabled = !ready;
+  $('queueStandalone').textContent = ready ? 'Queue video' : 'Add a prompt to queue';
+}
+
+function renderWorkingMode() {
+  const standalone = isStandaloneMode();
+  $('workingMode').value = standalone ? 'standalone' : 'studio';
+  $('companionPane').hidden = standalone;
+  $('standalonePane').hidden = !standalone;
+  $('studioBatchActions').hidden = standalone;
+  $('standaloneBatchActions').hidden = !standalone;
+  $('videoSource').disabled = standalone;
+  $('videoSource').value = standalone ? 'generate' : settings.videoSource;
+  updateStandaloneQueueButton();
+}
+
+async function changeWorkingMode() {
+  settings = await saveSettings({ mode: $('workingMode').value });
+  renderWorkingMode();
+  if (isStandaloneMode()) {
+    setStatus('Standalone mode uses a local prompt and Downloads.', 'ok');
+    return;
+  }
+  await loadProjects();
+}
+
 async function loadProjects() {
   setStatus('Loading Story Studio projects…');
   const data = await studio.listProjects();
@@ -308,6 +340,34 @@ function confirmQueue() {
       });
       if (!response?.ok) throw new Error(response?.error || 'Could not queue videos.');
       setStatus(`Queued ${response.added}${response.skipped ? `; skipped ${response.skipped}` : ''}.`, 'ok');
+      await pollQueue();
+    },
+  });
+}
+
+function confirmStandalone() {
+  const prompt = $('standalonePrompt').value.trim();
+  if (!prompt) return setStatus('Add a video prompt first.', 'failed');
+  if (!settings.flowProjectId) return setStatus('Select a generation workspace first.', 'failed');
+  showConfirmation({
+    title: 'Generate a standalone video?',
+    body: 'This local prompt will run as one video. The completed file saves to Downloads and may use account credits.',
+    confirmLabel: 'Use credits & queue',
+    onConfirm: async () => {
+      const response = await chrome.runtime.sendMessage({
+        type: 'enqueueStandalone',
+        payload: {
+          prompt,
+          projectId: settings.flowProjectId,
+          videoProvider: settings.videoProvider,
+          videoModel: settings.videoModel,
+          aspectRatio: settings.aspectRatio,
+        },
+      });
+      if (!response?.ok) throw new Error(response?.error || 'Could not queue this video.');
+      setStatus(response.added ? 'Queued standalone video.' : 'Matching standalone video is already queued.', 'ok');
+      $('standalonePrompt').value = '';
+      updateStandaloneQueueButton();
       await pollQueue();
     },
   });
@@ -727,6 +787,7 @@ async function init() {
   $('videoModel').value = settings.videoModel;
   $('videoSource').value = settings.videoSource;
   $('aspectRatio').value = settings.aspectRatio;
+  renderWorkingMode();
   renderWorkspace();
   renderHumanPace();
   renderCooldownCard();
@@ -735,6 +796,9 @@ async function init() {
   $('openOptions').addEventListener('click', () => chrome.runtime.openOptionsPage());
   $('openStudioSettings').addEventListener('click', () => chrome.runtime.openOptionsPage());
   $('testConn').addEventListener('click', testStudioConnection);
+  $('workingMode').addEventListener('change', () => {
+    changeWorkingMode().catch((error) => setStatus(publicMessage(error.message), 'failed'));
+  });
   $('project').addEventListener('change', () => {
     loadEpisodes().catch((error) => setStatus(publicMessage(error.message), 'failed'));
   });
@@ -748,6 +812,8 @@ async function init() {
     updateQueueButton();
   });
   $('queueSelected').addEventListener('click', confirmQueue);
+  $('queueStandalone').addEventListener('click', confirmStandalone);
+  $('standalonePrompt').addEventListener('input', updateStandaloneQueueButton);
   $('confirmCancel').addEventListener('click', closeConfirmation);
   $('confirm').addEventListener('click', (event) => {
     if (event.target === $('confirm')) closeConfirmation();
@@ -811,7 +877,9 @@ async function init() {
     saveCooldownCustom().catch((error) => setStatus(publicMessage(error.message), 'failed'));
   });
 
-  await loadProjects().catch((error) => setStatus(`Story Studio: ${publicMessage(error.message)}`, 'failed'));
+  if (!isStandaloneMode()) {
+    await loadProjects().catch((error) => setStatus(`Story Studio: ${publicMessage(error.message)}`, 'failed'));
+  }
   await pollQueue();
   setInterval(pollQueue, 1500);
   setInterval(() => {
