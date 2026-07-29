@@ -1,8 +1,11 @@
 # Changelog
 
+## 1.0.1
+
+- Updated product naming and simplified public metadata.
+
 ## 1.0.0
 
-- Initial video-only release split from Story Studio Bulk Asset.
-- Image-to-video from existing Story Studio scene images or a freshly generated Flow image.
-- Conservative paid-submission recovery: media-ID jobs resume polling; unknown submissions require review.
-- Saves to Story Studio `11 Video Assets` or Downloads.
+- Initial standalone video generation release.
+- Guided generation from Story Studio scenes.
+- Saves completed assets to Story Studio or Downloads.
