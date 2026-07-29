@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.19
+
+- Aligned Video Generator's primary, link, and focus colors with its teal icon
+  identity.
+
 ## 1.0.18
 
 - Standardized Settings with the shared full-width primary Save action.
