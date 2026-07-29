@@ -1,6 +1,5 @@
 export const DEFAULTS = {
   theme: 'system',
-  mode: 'studio',
   studioBaseUrl: 'http://localhost:8766',
   flowProjectId: '',
   flowProjectName: '',
@@ -36,6 +35,7 @@ export function normalizeFlowProjectId(value) {
 }
 
 function normalize(settings) {
+  delete settings.mode;
   const first = Math.max(0, Math.min(3600, Math.round(Number(settings.humanDelayMinSec) || 0)));
   const second = Math.max(0, Math.min(3600, Math.round(Number(settings.humanDelayMaxSec) || 0)));
   settings.humanDelayMinSec = Math.min(first, second);
@@ -46,7 +46,6 @@ function normalize(settings) {
     minutes: Math.max(1, Math.min(1440, Math.round(Number(cooldown.minutes) || 15))),
   };
   settings.flowProjectId = normalizeFlowProjectId(settings.flowProjectId);
-  if (!['studio', 'standalone'].includes(settings.mode)) settings.mode = DEFAULTS.mode;
   if (!['workspace'].includes(settings.videoProvider)) settings.videoProvider = DEFAULTS.videoProvider;
   if (!['existing', 'generate'].includes(settings.videoSource)) settings.videoSource = DEFAULTS.videoSource;
   if (!['16:9', '9:16'].includes(settings.aspectRatio)) settings.aspectRatio = DEFAULTS.aspectRatio;
@@ -56,7 +55,12 @@ function normalize(settings) {
 
 export async function getSettings() {
   const stored = await chrome.storage.sync.get(STORAGE_KEY);
-  return normalize({ ...DEFAULTS, ...(stored[STORAGE_KEY] || {}) });
+  const saved = stored[STORAGE_KEY] || {};
+  const { mode: _removedMode, ...current } = saved;
+  if (Object.hasOwn(saved, 'mode')) {
+    await chrome.storage.sync.set({ [STORAGE_KEY]: current });
+  }
+  return normalize({ ...DEFAULTS, ...current });
 }
 
 export async function saveSettings(patch) {

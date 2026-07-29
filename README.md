@@ -35,7 +35,7 @@ There is no build step.
 
 ## Notes
 
-- Project mode works with a running Story Studio workspace.
+- The extension works with a running Story Studio workspace.
 - The chosen destination controls whether finished files return to the project
   or the browser Downloads folder.
 - The queue is designed to survive closing and reopening the side panel.

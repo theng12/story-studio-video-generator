@@ -304,19 +304,9 @@ header .settings-gear:focus-visible { outline: 2px solid var(--accent); outline-
 .muted { color: var(--muted); font-size: 11px; }
 .small { font-size: 12px; }
 .section-head { margin-top: 10px; }
-.workflow-mode {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  margin: 8px 0 0;
-  color: var(--muted);
-  font-size: 11px;
-}
-.workflow-mode select { width: auto; min-width: 118px; margin: 0; color: var(--fg); }
 .connection-row { align-items: center; }
 .connection-test { color: var(--link); font-size: 12px; font-weight: 600; }
 #connStatus { text-align: right; }
-.standalone-hint { margin: 8px 0 0; line-height: 1.4; }
 .open-provider-row { margin-top: 4px; }
 #openFlow { padding: 5px 8px; }
 

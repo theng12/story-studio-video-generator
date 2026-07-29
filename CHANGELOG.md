@@ -1,12 +1,16 @@
 # Changelog
 
+## 1.0.13
+
+- Removed the external prompt workflow; video generation now uses Story Studio scenes.
+
 ## 1.0.12
 
 - Standardized the workspace action button.
 
 ## 1.0.11
 
-- Added Story Studio and standalone prompt working modes.
+- Updated Story Studio workflow controls.
 
 ## 1.0.10
 
@@ -46,6 +50,6 @@
 
 ## 1.0.0
 
-- Initial standalone video generation release.
+- Initial video generation release.
 - Guided generation from Story Studio scenes.
 - Saves completed assets to Story Studio or Downloads.
