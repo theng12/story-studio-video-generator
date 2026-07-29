@@ -1,0 +1,13 @@
+.DS_Store
+*.log
+node_modules/
+dist/
+coverage/
+
+# Never commit captured provider/session material or generated media.
+*.mp4
+*.webm
+*.mov
+*.jsonl
+captures/
+generated/
