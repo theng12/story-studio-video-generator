@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.10
+
+- Combined queue pacing controls into one section.
+
 ## 1.0.9
 
 - Corrected the generation workspace and provider settings hierarchy.

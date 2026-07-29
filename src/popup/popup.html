@@ -159,12 +159,13 @@
 
     <details class="advanced-panel" id="humanPacePanel">
       <summary>
-        <span>Human pace</span>
+        <span>Queue pacing</span>
         <span id="humanPaceSummary" class="summary-state">—</span>
       </summary>
-      <section class="pace-card">
+      <div class="queue-pacing-body">
+      <section class="queue-pacing-section">
         <div class="row between">
-          <span class="muted small">Gap between generations</span>
+          <span class="muted small">Human pace · gap between generations</span>
           <span id="humanPaceState" class="pace-state" aria-live="polite"></span>
         </div>
         <label class="pace-preset"><span class="mini">Suggested pace</span>
@@ -185,16 +186,12 @@
           </label>
         </div>
       </section>
-    </details>
 
-    <details class="advanced-panel" id="cooldownPanel">
-      <summary>
-        <span>Provider cooldown</span>
-        <span id="cooldownState" class="pace-state off" aria-live="polite">Manual</span>
-      </summary>
-      <section class="pace-card">
+      <div class="pace-divider" role="separator"><span>Provider cooldown</span></div>
+      <section class="queue-pacing-section" id="cooldownPanel">
         <div class="row between">
           <span class="muted small">Temporary service limits</span>
+          <span id="cooldownState" class="pace-state off" aria-live="polite">Manual</span>
         </div>
         <label class="check">
           <input type="checkbox" id="cooldownAutoResume" />
@@ -219,6 +216,7 @@
         </div>
         <p class="muted cooldown-hint">Manual (default): a detected limit pauses the queue until you press Resume. Auto-resume: the queue waits the chosen time, then resumes on its own. You can press Resume any time to override. Needs-review jobs always require your explicit decision.</p>
       </section>
+      </div>
     </details>
 
     <p id="status" class="muted"></p>

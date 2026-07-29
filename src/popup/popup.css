@@ -407,6 +407,23 @@ header .settings-gear:focus-visible { outline: 2px solid var(--accent); outline-
   white-space: nowrap;
 }
 .pace-state.off { color: var(--muted); }
+.queue-pacing-body {
+  padding: 10px;
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 8px 8px;
+  background: var(--surface);
+}
+.queue-pacing-section > .row:first-child { margin-top: 0; }
+.pace-divider {
+  margin: 14px 0 0;
+  padding: 12px 0 0;
+  border-top: 1px solid var(--divider);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
 label.check {
   display: flex;
   align-items: center;
