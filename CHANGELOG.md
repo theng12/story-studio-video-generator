@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.5
+
+- Standardized the provider cooldown controls.
+
 ## 1.0.3
 
 - Standardized the primary video setup controls.

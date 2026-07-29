@@ -565,10 +565,9 @@ function renderCooldownState(cooldownUntil = 0) {
   const active = activeUntil > Date.now();
   const label = !cooldown.autoResume
     ? 'Manual'
-    : active ? `Cooldown · ${formatDuration(activeUntil - Date.now())}` : `Auto · ${cooldownMinutesLabel(cooldown.minutes)}`;
+    : active ? `On cooldown · ${formatDuration(activeUntil - Date.now())}` : `Auto-resume · ${cooldownMinutesLabel(cooldown.minutes)}`;
   $('cooldownState').textContent = label;
   $('cooldownState').className = `pace-state${cooldown.autoResume ? '' : ' off'}`;
-  $('cooldownSummary').textContent = active ? 'Cooling down' : cooldown.autoResume ? 'Auto-resume' : 'Manual';
 }
 
 async function saveCooldown(patch) {

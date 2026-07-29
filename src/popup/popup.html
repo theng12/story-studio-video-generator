@@ -176,19 +176,18 @@
     <details class="advanced-panel" id="cooldownPanel">
       <summary>
         <span>Provider cooldown</span>
-        <span id="cooldownSummary" class="summary-state">Manual</span>
+        <span id="cooldownState" class="pace-state off" aria-live="polite">Manual</span>
       </summary>
       <section class="pace-card">
         <div class="row between">
           <span class="muted small">Temporary service limits</span>
-          <span id="cooldownState" class="pace-state off" aria-live="polite">Manual</span>
         </div>
         <label class="check">
           <input type="checkbox" id="cooldownAutoResume" />
-          <span>Resume after a detected temporary limit</span>
+          <span>Auto-resume after a detected limit</span>
         </label>
         <div id="cooldownOpts" hidden>
-          <label class="pace-preset"><span class="mini">Suggested wait</span>
+          <label class="pace-preset"><span class="mini">Cooldown before auto-resume</span>
             <select id="cooldownPreset">
               <option value="15">15 minutes</option>
               <option value="30">30 minutes</option>
@@ -199,12 +198,12 @@
             </select>
           </label>
           <div id="cooldownCustom" class="row pace-custom" hidden>
-            <label class="grow"><span class="mini">Minutes</span>
+            <label class="grow"><span class="mini">Custom minutes</span>
               <input id="cooldownMinutes" type="number" min="1" max="1440" step="1" />
             </label>
           </div>
         </div>
-        <p class="muted cooldown-hint">A temporary limit only retries work that did not enter an unknown paid submission. Needs-review jobs always require your explicit decision.</p>
+        <p class="muted cooldown-hint">Manual (default): a detected limit pauses the queue until you press Resume. Auto-resume: the queue waits the chosen time, then resumes on its own. You can press Resume any time to override. Needs-review jobs always require your explicit decision.</p>
       </section>
     </details>
 
