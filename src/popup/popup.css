@@ -1,0 +1,67 @@
+:root {
+  color-scheme: dark;
+  font: 13px/1.4 system-ui, sans-serif;
+  background: #0d1117;
+  color: #e6edf3;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; padding: 14px; min-width: 430px; background: #0d1117; }
+header, .row { display: flex; align-items: center; gap: 8px; }
+header, .between { justify-content: space-between; }
+h1 { margin: 0; font-size: 18px; }
+h2 { margin-top: 0; font-size: 16px; }
+.card {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid #30363d;
+  border-radius: 10px;
+  background: #161b22;
+}
+.warning { display: flex; flex-direction: column; border-color: #9e6a03; background: #271d06; }
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+label { display: flex; flex-direction: column; gap: 5px; margin-bottom: 10px; }
+select, input, button {
+  border: 1px solid #3d444d;
+  border-radius: 7px;
+  padding: 7px 9px;
+  background: #21262d;
+  color: inherit;
+}
+button { cursor: pointer; background: #1f6feb; border-color: #1f6feb; font-weight: 600; }
+button:disabled { opacity: .45; cursor: default; }
+button.secondary { background: #21262d; border-color: #3d444d; }
+button.danger { background: #9e2a2b; border-color: #c93c37; }
+.muted { color: #8b949e; }
+.hidden { display: none !important; }
+.scenes, .queue { display: flex; flex-direction: column; gap: 7px; margin: 10px 0; }
+.scene, .qitem {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 7px;
+  background: #0d1117;
+}
+.scene .body, .qitem .body { flex: 1; min-width: 0; }
+.prompt { color: #8b949e; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.badge { padding: 2px 6px; border-radius: 999px; background: #30363d; font-size: 11px; }
+.badge.done { background: #1b4721; }
+.badge.failed, .badge.ambiguous { background: #672020; }
+.status { margin: 10px 0; }
+.modal {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, .72);
+}
+.dialog {
+  width: min(420px, 100%);
+  padding: 18px;
+  border: 1px solid #3d444d;
+  border-radius: 12px;
+  background: #161b22;
+}
+.end { justify-content: flex-end; }

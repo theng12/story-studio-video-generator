@@ -1,0 +1,38 @@
+<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#6d5cf0"/>
+      <stop offset="1" stop-color="#a24bf0"/>
+    </linearGradient>
+    <linearGradient id="card" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#eae7ff"/>
+    </linearGradient>
+    <clipPath id="frontclip">
+      <rect x="-30" y="-26" width="60" height="50" rx="9"/>
+    </clipPath>
+  </defs>
+
+  <!-- background -->
+  <rect x="4" y="4" width="120" height="120" rx="28" fill="url(#bg)"/>
+  <rect x="4" y="4" width="120" height="62" rx="28" fill="#ffffff" opacity="0.10"/>
+
+  <!-- stacked media tiles = bulk assets -->
+  <g transform="translate(62 72)">
+    <rect x="-34" y="-30" width="60" height="48" rx="9" fill="#ffffff" opacity="0.32" transform="rotate(-11)"/>
+    <rect x="-32" y="-28" width="60" height="48" rx="9" fill="#ffffff" opacity="0.58" transform="rotate(-4)"/>
+    <g transform="rotate(5)">
+      <rect x="-30" y="-26" width="60" height="50" rx="9" fill="url(#card)"/>
+      <g clip-path="url(#frontclip)">
+        <circle cx="-11" cy="-10" r="6" fill="#ffb22e"/>
+        <path d="M-32 24 L-8 -3 L4 11 L14 -3 L32 24 Z" fill="#7b61ff"/>
+      </g>
+    </g>
+  </g>
+
+  <!-- AI sparkle = generated -->
+  <g transform="translate(96 33)">
+    <circle cx="0" cy="0" r="14" fill="#ffffff" opacity="0.16"/>
+    <path d="M0 -14 C1.6 -4.5 4.5 -1.6 14 0 C4.5 1.6 1.6 4.5 0 14 C-1.6 4.5 -4.5 1.6 -14 0 C-4.5 -1.6 -1.6 -4.5 0 -14 Z" fill="#ffffff"/>
+  </g>
+</svg>

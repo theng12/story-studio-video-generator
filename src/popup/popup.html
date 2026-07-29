@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Story Studio Video Generator</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <div>
+        <h1>Story Studio Video Generator</h1>
+        <div id="version" class="muted"></div>
+      </div>
+      <button id="openOptions" class="secondary">Settings</button>
+    </header>
+
+    <section class="card warning">
+      <strong>Paid generation</strong>
+      <span>Every queued clip can spend Flow/Veo credits. Submission is sequential and requires confirmation.</span>
+    </section>
+
+    <section class="card grid">
+      <label>
+        <span>Video model</span>
+        <select id="videoModel">
+          <option value="omni-flash">Omni Flash — audio</option>
+          <option value="veo-3.1-lite">Veo 3.1 Lite</option>
+          <option value="veo-3.1-fast">Veo 3.1 Fast</option>
+          <option value="veo-3.1-quality">Veo 3.1 Quality</option>
+        </select>
+      </label>
+      <label>
+        <span>Start image</span>
+        <select id="videoSource">
+          <option value="existing">Existing scene image</option>
+          <option value="generate">Generate a fresh image first</option>
+        </select>
+      </label>
+      <label>
+        <span>Aspect ratio</span>
+        <select id="aspectRatio">
+          <option value="16:9">16:9</option>
+          <option value="9:16">9:16</option>
+        </select>
+      </label>
+      <label>
+        <span>Save to</span>
+        <select id="saveTarget">
+          <option value="project">Story Studio “11 Video Assets”</option>
+          <option value="download">Downloads</option>
+        </select>
+      </label>
+    </section>
+
+    <section class="card">
+      <div class="row between">
+        <div>
+          <strong>Flow project</strong>
+          <div id="flowProject" class="muted">None selected</div>
+        </div>
+        <div class="row">
+          <button id="openFlow" class="secondary">Open Flow</button>
+          <button id="useFlow" class="secondary">Use current tab</button>
+          <button id="newFlow" class="secondary">New</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <label>
+        <span>Story Studio project</span>
+        <select id="project"></select>
+      </label>
+      <label>
+        <span>Episode</span>
+        <select id="episode"></select>
+      </label>
+      <div class="row">
+        <button id="loadScenes">Load eligible scenes</button>
+        <button id="selectMissing" class="secondary">Select missing</button>
+      </div>
+      <div id="scenes" class="scenes"></div>
+      <button id="queueSelected" disabled>Queue selected</button>
+    </section>
+
+    <section class="card">
+      <div class="row between">
+        <strong>Video queue</strong>
+        <div class="row">
+          <button id="pauseQueue" class="secondary">Pause</button>
+          <button id="clearQueue" class="danger">Clear waiting</button>
+        </div>
+      </div>
+      <div id="status" class="status muted">Idle.</div>
+      <div id="queue" class="queue"></div>
+    </section>
+
+    <div id="confirm" class="modal hidden">
+      <div class="dialog">
+        <h2 id="confirmTitle">Confirm paid generation</h2>
+        <p id="confirmBody"></p>
+        <div class="row end">
+          <button id="confirmCancel" class="secondary">Cancel</button>
+          <button id="confirmOk" class="danger">Spend credits & queue</button>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>
