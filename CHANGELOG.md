@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.6
+
+- Clarified the provider settings hierarchy.
+
 ## 1.0.5
 
 - Standardized the provider cooldown controls.
