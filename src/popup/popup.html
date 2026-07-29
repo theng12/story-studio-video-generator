@@ -64,6 +64,13 @@
       </div>
     </section>
 
+    <label class="workflow-mode"><span>Mode ·</span>
+      <select id="workingMode" aria-label="Working mode">
+        <option value="studio">Story Studio</option>
+        <option value="standalone">Standalone</option>
+      </select>
+    </label>
+
     <div class="form-grid form-grid-three">
       <label>Provider
         <select id="videoProvider">
@@ -103,7 +110,7 @@
 
     <section id="companionPane">
       <div class="row between connection-row">
-        <button id="testConn" class="link small">Test Studio connection</button>
+        <button id="testConn" class="connection-test">Test Studio connection</button>
         <span id="connStatus" class="muted" aria-live="polite"></span>
       </div>
       <div class="form-grid form-grid-two">
@@ -122,6 +129,13 @@
         </div>
       </div>
       <div id="scenes" class="sectionlist"></div>
+    </section>
+
+    <section id="standalonePane" hidden>
+      <label>Video prompt
+        <textarea id="standalonePrompt" rows="5" placeholder="Describe the scene video you want to create."></textarea>
+      </label>
+      <p class="muted standalone-hint">Standalone uses this local prompt to create a start image, then saves the finished video to Downloads.</p>
     </section>
 
     <details class="advanced-panel provider-settings-panel">
@@ -150,11 +164,15 @@
             <option value="9:16">9:16</option>
           </select>
         </label>
+        <p id="standaloneGenerationNote" class="muted standalone-hint" hidden>Standalone mode uses a generated start image and saves to Downloads.</p>
       </section>
     </details>
 
-    <div class="batch-actions">
+    <div id="studioBatchActions" class="batch-actions">
       <button id="queueSelected" class="primary" disabled>Queue selected</button>
+    </div>
+    <div id="standaloneBatchActions" class="batch-actions" hidden>
+      <button id="queueStandalone" class="primary" disabled>Queue video</button>
     </div>
 
     <details class="advanced-panel" id="humanPacePanel">

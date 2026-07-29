@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.11
+
+- Added Story Studio and standalone prompt working modes.
+
 ## 1.0.10
 
 - Combined queue pacing controls into one section.

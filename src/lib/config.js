@@ -1,5 +1,6 @@
 export const DEFAULTS = {
   theme: 'system',
+  mode: 'studio',
   studioBaseUrl: 'http://localhost:8766',
   flowProjectId: '',
   flowProjectName: '',
@@ -45,6 +46,7 @@ function normalize(settings) {
     minutes: Math.max(1, Math.min(1440, Math.round(Number(cooldown.minutes) || 15))),
   };
   settings.flowProjectId = normalizeFlowProjectId(settings.flowProjectId);
+  if (!['studio', 'standalone'].includes(settings.mode)) settings.mode = DEFAULTS.mode;
   if (!['workspace'].includes(settings.videoProvider)) settings.videoProvider = DEFAULTS.videoProvider;
   if (!['existing', 'generate'].includes(settings.videoSource)) settings.videoSource = DEFAULTS.videoSource;
   if (!['16:9', '9:16'].includes(settings.aspectRatio)) settings.aspectRatio = DEFAULTS.aspectRatio;
