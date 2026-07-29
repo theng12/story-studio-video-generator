@@ -298,20 +298,6 @@ header .settings-gear:focus-visible { outline: 2px solid var(--accent); outline-
 .open-provider-row { margin-top: 4px; }
 #openFlow { color: var(--link); }
 
-.credit-note {
-  display: flex;
-  gap: 8px;
-  align-items: baseline;
-  margin-bottom: 12px;
-  padding: 8px 10px;
-  border: 1px solid color-mix(in srgb, var(--warning) 35%, var(--border));
-  border-radius: 8px;
-  color: var(--muted);
-  background: color-mix(in srgb, var(--warning) 7%, var(--surface));
-  font-size: 11px;
-}
-.credit-note strong { flex: none; color: var(--warning); }
-
 .advanced-panel {
   margin-top: 10px;
   border: 1px solid var(--border);
@@ -538,5 +524,4 @@ label.check input { width: auto; margin: 0; flex: none; }
   .workspace-actions,
   .queue-actions { grid-template-columns: 1fr; }
   .activity-meta { white-space: normal; }
-  .credit-note { align-items: flex-start; flex-direction: column; gap: 2px; }
 }
