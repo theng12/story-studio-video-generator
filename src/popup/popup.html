@@ -230,19 +230,26 @@
     </section>
 
     <section id="standalonePane" hidden>
-      <label>Video prompt
-        <textarea id="standalonePrompt" rows="5" placeholder="Describe the video you want to create."></textarea>
-      </label>
-      <p class="muted standalone-hint">Uses this local prompt, then saves the completed video to Downloads.</p>
+      <div id="standaloneEditor" class="standalone-editor">
+        <label>Video prompts
+          <textarea id="standalonePrompt" rows="8" placeholder="Paste one video prompt per line."></textarea>
+        </label>
+        <p class="muted standalone-hint">Each non-empty line becomes one video task saved to Downloads.</p>
+        <button id="reviewStandalone" class="primary" type="button">Review prompts</button>
+      </div>
+      <div id="standaloneReview" class="standalone-review" hidden>
+        <div class="review-heading"><span>Ready to queue</span><span id="standaloneReviewCount" class="summary-state"></span></div>
+        <ol id="standaloneReviewList" class="review-list"></ol>
+        <div class="review-actions">
+          <button id="editStandalone" type="button">Edit prompts</button>
+          <button id="queueStandalone" class="primary" type="button">Queue video</button>
+        </div>
+      </div>
     </section>
 
     <div id="studioBatchActions" class="batch-actions">
       <button id="queueSelected" class="primary" disabled>Queue selected</button>
     </div>
-    <div id="standaloneBatchActions" class="batch-actions" hidden>
-      <button id="queueStandalone" class="primary" disabled>Queue video</button>
-    </div>
-
     <p id="status" class="muted"></p>
 
     <div id="whatsNewModal" class="overlay" hidden>

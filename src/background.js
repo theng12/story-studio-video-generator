@@ -342,43 +342,51 @@ function standaloneSceneId(prompt) {
 async function enqueueStandalone(payload) {
   const settings = await getSettings();
   const projectId = normalizeFlowProjectId(payload?.projectId || settings.flowProjectId);
-  const prompt = String(payload?.prompt || '').trim();
+  const prompts = Array.isArray(payload?.prompts)
+    ? payload.prompts.map((prompt) => String(prompt || '').trim()).filter(Boolean).slice(0, 100)
+    : [String(payload?.prompt || '').trim()].filter(Boolean);
   if (!projectId) throw new Error('Select a generation workspace before queuing a video.');
-  if (!prompt) throw new Error('Enter a video prompt before queuing.');
-  const sceneId = standaloneSceneId(prompt);
+  if (!prompts.length) throw new Error('Enter at least one video prompt before queuing.');
   const queue = await getQueue();
-  const item = {
-    id: `${Date.now()}_${sequence++}`,
-    status: 'pending',
-    phase: 'queued',
-    queuedAt: Date.now(),
-    slug: 'standalone',
-    projectName: 'Standalone',
-    episodeCode: 'Standalone',
-    episodeTitle: '',
-    sceneId,
-    label: 'Standalone video',
-    motionPrompt: prompt,
-    imagePrompt: prompt,
-    durationSec: 4,
-    projectId,
-    videoProvider: payload.videoProvider || settings.videoProvider,
-    videoModel: payload.videoModel || settings.videoModel,
-    videoSource: 'generate',
-    imageModel: settings.imageModel,
-    aspectRatio: payload.aspectRatio || settings.aspectRatio,
-    target: 'download',
-    downloadPath: `StoryStudioVideos/Standalone/${sceneId}.mp4`,
-  };
-  if (queue.some((candidate) => ['pending', 'running'].includes(candidate.status) && itemKey(candidate) === itemKey(item))) {
-    return { ok: true, added: 0, skipped: 1 };
+  let added = 0;
+  let skipped = 0;
+  for (const [index, prompt] of prompts.entries()) {
+    const sceneId = `${standaloneSceneId(prompt)}_${String(index + 1).padStart(2, '0')}`;
+    const item = {
+      id: `${Date.now()}_${sequence++}`,
+      status: 'pending',
+      phase: 'queued',
+      queuedAt: Date.now(),
+      slug: 'standalone',
+      projectName: 'Standalone',
+      episodeCode: 'Standalone',
+      episodeTitle: '',
+      sceneId,
+      label: prompts.length > 1 ? `Standalone video ${index + 1}/${prompts.length}` : 'Standalone video',
+      motionPrompt: prompt,
+      imagePrompt: prompt,
+      durationSec: 4,
+      projectId,
+      videoProvider: payload.videoProvider || settings.videoProvider,
+      videoModel: payload.videoModel || settings.videoModel,
+      videoSource: 'generate',
+      imageModel: settings.imageModel,
+      aspectRatio: payload.aspectRatio || settings.aspectRatio,
+      target: 'download',
+      downloadPath: `StoryStudioVideos/Standalone/${sceneId}.mp4`,
+    };
+    if (queue.some((candidate) => ['pending', 'running'].includes(candidate.status) && itemKey(candidate) === itemKey(item))) {
+      skipped += 1;
+      continue;
+    }
+    queue.push(item);
+    added += 1;
   }
-  queue.push(item);
   await setQueue(queue);
   await chrome.storage.local.remove(PAUSED_KEY);
   createAlarm();
   processQueue();
-  return { ok: true, added: 1, skipped: 0 };
+  return { ok: true, added, skipped };
 }
 
 async function processQueue() {

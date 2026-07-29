@@ -85,11 +85,7 @@ function isStandaloneMode() {
   return settings?.mode === 'standalone';
 }
 
-function updateStandaloneQueueButton() {
-  const ready = Boolean($('standalonePrompt').value.trim());
-  $('queueStandalone').disabled = !ready;
-  $('queueStandalone').textContent = ready ? 'Queue video' : 'Add a prompt to queue';
-}
+let standalonePrompts = [];
 
 function renderWorkingMode() {
   const standalone = isStandaloneMode();
@@ -97,10 +93,8 @@ function renderWorkingMode() {
   $('companionPane').hidden = standalone;
   $('standalonePane').hidden = !standalone;
   $('studioBatchActions').hidden = standalone;
-  $('standaloneBatchActions').hidden = !standalone;
   $('videoSource').disabled = standalone;
   $('videoSource').value = standalone ? 'generate' : settings.videoSource;
-  updateStandaloneQueueButton();
 }
 
 async function changeWorkingMode() {
@@ -345,19 +339,49 @@ function confirmQueue() {
   });
 }
 
+function parseStandalonePrompts(value) {
+  return String(value || '')
+    .split(/\r?\n/)
+    .map((prompt) => prompt.trim().replace(/^(?:[-*]|\d+[.)])\s+/, ''))
+    .filter(Boolean)
+    .slice(0, 100);
+}
+
+function showStandaloneEditor() {
+  $('standaloneEditor').hidden = false;
+  $('standaloneReview').hidden = true;
+}
+
+function reviewStandalonePrompts() {
+  const prompts = parseStandalonePrompts($('standalonePrompt').value);
+  if (!prompts.length) return setStatus('Add at least one video prompt first.', 'failed');
+  standalonePrompts = prompts;
+  $('standaloneReviewCount').textContent = `${prompts.length} prompt${prompts.length === 1 ? '' : 's'}`;
+  $('standaloneReviewList').replaceChildren(
+    ...prompts.map((prompt, index) => {
+      const item = document.createElement('li');
+      item.textContent = `${index + 1}. ${prompt}`;
+      item.title = prompt;
+      return item;
+    })
+  );
+  $('standaloneEditor').hidden = true;
+  $('standaloneReview').hidden = false;
+  setStatus(`Review ${prompts.length} video prompt${prompts.length === 1 ? '' : 's'} before queueing.`, 'ok');
+}
+
 function confirmStandalone() {
-  const prompt = $('standalonePrompt').value.trim();
-  if (!prompt) return setStatus('Add a video prompt first.', 'failed');
+  if (!standalonePrompts.length) return setStatus('Review the prompts before queueing.', 'failed');
   if (!settings.flowProjectId) return setStatus('Select a generation workspace first.', 'failed');
   showConfirmation({
-    title: 'Generate a standalone video?',
-    body: 'This local prompt will run as one video. The completed file saves to Downloads and may use account credits.',
+    title: `Generate ${standalonePrompts.length} standalone video${standalonePrompts.length === 1 ? '' : 's'}?`,
+    body: 'These local prompts will run sequentially. Completed files save to Downloads and may use account credits.',
     confirmLabel: 'Use credits & queue',
     onConfirm: async () => {
       const response = await chrome.runtime.sendMessage({
         type: 'enqueueStandalone',
         payload: {
-          prompt,
+          prompts: standalonePrompts,
           projectId: settings.flowProjectId,
           videoProvider: settings.videoProvider,
           videoModel: settings.videoModel,
@@ -365,9 +389,10 @@ function confirmStandalone() {
         },
       });
       if (!response?.ok) throw new Error(response?.error || 'Could not queue this video.');
-      setStatus(response.added ? 'Queued standalone video.' : 'Matching standalone video is already queued.', 'ok');
+      setStatus(response.added ? `Queued ${response.added} standalone video${response.added === 1 ? '' : 's'}.` : 'Matching standalone videos are already queued.', 'ok');
       $('standalonePrompt').value = '';
-      updateStandaloneQueueButton();
+      standalonePrompts = [];
+      showStandaloneEditor();
       await pollQueue();
     },
   });
@@ -812,8 +837,12 @@ async function init() {
     updateQueueButton();
   });
   $('queueSelected').addEventListener('click', confirmQueue);
+  $('reviewStandalone').addEventListener('click', reviewStandalonePrompts);
+  $('editStandalone').addEventListener('click', showStandaloneEditor);
   $('queueStandalone').addEventListener('click', confirmStandalone);
-  $('standalonePrompt').addEventListener('input', updateStandaloneQueueButton);
+  $('standalonePrompt').addEventListener('input', () => {
+    if (standalonePrompts.length) showStandaloneEditor();
+  });
   $('confirmCancel').addEventListener('click', closeConfirmation);
   $('confirm').addEventListener('click', (event) => {
     if (event.target === $('confirm')) closeConfirmation();

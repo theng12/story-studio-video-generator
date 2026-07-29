@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.25
+
+- Added a paste, review, and approval flow for standalone video prompts.
+
 ## 1.0.24
 
 - Kept the compact queue-action row visible and added a consistent Clear pending control.

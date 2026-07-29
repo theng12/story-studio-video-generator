@@ -309,6 +309,15 @@ header .settings-gear:focus-visible { outline: 2px solid var(--accent); outline-
 }
 .workflow-mode select { width: auto; min-width: 144px; margin: 0; }
 .standalone-hint { margin: 8px 0 0; line-height: 1.45; }
+.standalone-editor { display: grid; gap: 12px; }
+.standalone-editor label { margin-top: 0; }
+.standalone-editor textarea { min-height: 168px; }
+.standalone-review { display: grid; gap: 12px; }
+.review-heading { display: flex; align-items: center; justify-content: space-between; font-size: 14px; font-weight: 600; }
+.review-list { max-height: 252px; margin: 0; padding: 0; overflow-y: auto; list-style: none; border-top: 1px solid var(--divider); }
+.review-list li { overflow: hidden; padding: 9px 2px; border-bottom: 1px solid var(--divider); text-overflow: ellipsis; white-space: nowrap; }
+.review-actions { display: grid; grid-template-columns: minmax(0, .7fr) minmax(0, 1.3fr); gap: 12px; }
+.review-actions .primary { margin-top: 0; }
 .connection-row { flex-wrap: wrap; align-items: center; }
 .connection-test { font-weight: 600; }
 .studio-connection-actions { display: flex; align-items: center; gap: 8px; }
