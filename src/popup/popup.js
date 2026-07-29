@@ -109,6 +109,54 @@ async function loadProjects() {
   await loadEpisodes();
 }
 
+async function testStudioConnection() {
+  const button = $('testConn');
+  const output = $('connStatus');
+  const setConnectionStatus = (text, color) => {
+    output.textContent = text;
+    output.style.color = color;
+  };
+
+  button.disabled = true;
+  setConnectionStatus('Testing…', 'var(--muted)');
+  try {
+    const url = settings.studioBaseUrl || '';
+    const local = /localhost|127\.0\.0\.1|\[::1\]/.test(url);
+    if (!local) {
+      let pattern = null;
+      try {
+        const parsed = new URL(url);
+        pattern = `${parsed.protocol}//${parsed.hostname}/*`;
+      } catch {
+        // The request below reports an invalid configured URL clearly.
+      }
+      const granted = pattern
+        ? await chrome.permissions.contains({ origins: [pattern] }).catch(() => false)
+        : false;
+      if (!granted) {
+        setConnectionStatus('✗ No host access — update extension site access for this server.', 'var(--danger)');
+        return;
+      }
+    }
+    const data = await studio.listProjects();
+    const count = Array.isArray(data) ? data.length : (data?.projects || []).length;
+    setConnectionStatus(
+      `✓ Connected — ${count} project${count === 1 ? '' : 's'}.`,
+      'var(--ok)'
+    );
+  } catch (error) {
+    const local = /localhost|127\.0\.0\.1|\[::1\]/.test(settings.studioBaseUrl || '');
+    setConnectionStatus(
+      `✗ ${publicMessage(error.message)}. ${
+        local ? 'Is Story Studio running?' : 'Check the server, site access, and sign-in.'
+      }`,
+      'var(--danger)'
+    );
+  } finally {
+    button.disabled = false;
+  }
+}
+
 async function loadEpisodes() {
   const slug = $('project').value;
   if (!slug) return;
@@ -656,6 +704,7 @@ async function init() {
   initWhatsNew();
 
   $('openOptions').addEventListener('click', () => chrome.runtime.openOptionsPage());
+  $('testConn').addEventListener('click', testStudioConnection);
   $('project').addEventListener('change', () => {
     loadEpisodes().catch((error) => setStatus(publicMessage(error.message), 'failed'));
   });

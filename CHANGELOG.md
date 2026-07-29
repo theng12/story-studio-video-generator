@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.7
+
+- Added a Studio connection test in the side panel.
+
 ## 1.0.6
 
 - Clarified the provider settings hierarchy.

@@ -295,6 +295,9 @@ header .settings-gear:focus-visible { outline: 2px solid var(--accent); outline-
 .muted { color: var(--muted); font-size: 11px; }
 .small { font-size: 12px; }
 .section-head { margin-top: 10px; }
+.connection-row { align-items: center; }
+#testConn { color: var(--link); }
+#connStatus { text-align: right; }
 .open-provider-row { margin-top: 4px; }
 #openFlow { color: var(--link); }
 
