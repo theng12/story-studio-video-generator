@@ -8,11 +8,8 @@
     <script src="../lib/theme-preload.js"></script>
   </head>
   <body>
-    <header>
-      <div class="header-brand">
-        <h1>Story Studio Video Generator</h1>
-        <span id="extensionVersion" class="version-badge" title="Installed extension version"></span>
-      </div>
+    <header class="panel-toolbar">
+      <span id="extensionVersion" class="version-badge" title="Installed extension version"></span>
       <div class="header-actions">
         <button id="whatsNew" class="link small whats-new" title="What changed recently">
           ✨ What's new<span id="whatsNewDot" class="ndot" hidden></span>
@@ -89,16 +86,16 @@
       <section class="context-card">
         <p class="muted">Use a signed-in workspace for this batch.</p>
         <div class="workspace-actions">
-          <button id="useFlow">Use current tab</button>
-          <button id="newFlow">New workspace</button>
+          <button id="useFlow" class="small">Use current tab</button>
+          <button id="newFlow" class="small">New workspace</button>
         </div>
       </section>
     </details>
 
     <section id="companionPane">
-      <div class="row between connection-row">
-        <button id="testConn" class="connection-test">Test Studio connection</button>
+      <div class="row end connection-row">
         <span id="connStatus" class="muted" aria-live="polite"></span>
+        <button id="testConn" class="small connection-test">Test Studio connection</button>
       </div>
       <div class="form-grid form-grid-two">
         <label>Project

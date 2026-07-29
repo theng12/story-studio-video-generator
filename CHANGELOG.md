@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.15
+
+- Standardized the Video panel controls, disclosures, and toolbar.
+
 ## 1.0.14
 
 - Made Story Studio the only completed-video destination.
