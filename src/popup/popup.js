@@ -10,6 +10,7 @@ let episodes = [];
 let scenes = [];
 let elapsedStartedAt = 0;
 let latestLiveStatus = null;
+let activeCooldownUntil = 0;
 
 function setStatus(text, kind = '') {
   $('status').textContent = text;
@@ -381,6 +382,7 @@ function renderQueue(queue, state, live) {
   const nextPending = queue.find((item) => item.status === 'pending');
   const cooldownUntil = Number(state?.cooldownUntil) ||
     (live?.countdownReason === 'cooldown' ? Number(live.countdownUntil) : 0);
+  activeCooldownUntil = cooldownUntil;
   const cooling = left > 0 && cooldownUntil > Date.now();
   const waiting = !cooling && left > 0 && Number(live?.countdownUntil) > Date.now();
 
@@ -516,6 +518,7 @@ function renderQueue(queue, state, live) {
   });
 
   renderCooldownState(cooldownUntil);
+  renderAppliedSettings();
 }
 
 async function pollQueue() {
@@ -562,6 +565,7 @@ function renderHumanPace() {
   $('humanPaceState').textContent = label;
   $('humanPaceState').className = `pace-state${max ? '' : ' off'}`;
   $('humanPaceSummary').textContent = label;
+  renderAppliedSettings();
 }
 
 async function savePace(values = null) {
@@ -604,6 +608,7 @@ function renderCooldownCard() {
   $('cooldownCustom').hidden = !cooldown.autoResume || preset !== 'custom';
   $('cooldownMinutes').value = String(cooldown.minutes);
   renderCooldownState();
+  renderAppliedSettings();
 }
 
 function renderCooldownState(cooldownUntil = 0) {
@@ -616,6 +621,26 @@ function renderCooldownState(cooldownUntil = 0) {
     : active ? `On cooldown · ${formatDuration(activeUntil - Date.now())}` : `Auto-resume · ${cooldownMinutesLabel(cooldown.minutes)}`;
   $('cooldownState').textContent = label;
   $('cooldownState').className = `pace-state${cooldown.autoResume ? '' : ' off'}`;
+}
+
+function renderAppliedSettings() {
+  const { min, max } = paceValues();
+  const pace = max === 0 ? 'off' : min === max ? `${min}s` : `${min}–${max}s`;
+  const cooldown = cooldownSettings();
+  const liveUntil = Number(activeCooldownUntil) ||
+    (latestLiveStatus?.countdownReason === 'cooldown' ? Number(latestLiveStatus.countdownUntil) : 0);
+  const cooldownText = !cooldown.autoResume
+    ? 'manual'
+    : liveUntil > Date.now()
+      ? `on cooldown · ${formatDuration(liveUntil - Date.now())}`
+      : `auto-resume ${cooldownMinutesLabel(cooldown.minutes)}`;
+  const line = $('appliedSettings');
+  line.replaceChildren();
+  const pacing = document.createElement('span');
+  pacing.textContent = `⚙ Pacing ${pace}`;
+  const providerCooldown = document.createElement('span');
+  providerCooldown.textContent = `Provider cooldown: ${cooldownText}`;
+  line.append(pacing, providerCooldown);
 }
 
 async function saveCooldown(patch) {
@@ -787,6 +812,7 @@ async function init() {
   setInterval(() => {
     updateElapsed();
     renderCooldownState();
+    renderAppliedSettings();
   }, 1000);
 }
 

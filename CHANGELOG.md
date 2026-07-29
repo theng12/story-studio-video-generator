@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.8
+
+- Added a compact applied queue-settings summary.
+
 ## 1.0.7
 
 - Added a Studio connection test in the side panel.
