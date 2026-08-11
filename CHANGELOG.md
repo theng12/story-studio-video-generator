@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.0
+
+- Added signed Flow model inventory discovery with tested fallback provenance and fail-closed exact model snapshots.
+- Added fresh-image review and paid-video ambiguity recovery so unknown submitted work is never replayed automatically.
+- Removed dead video settings and documented maintained Story Studio, standalone Downloads, and opt-in Fleet controls.
+
 ## 1.0.25
 
 - Added a paste, review, and approval flow for standalone video prompts.
