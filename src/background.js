@@ -7,6 +7,7 @@ import {
 import { StudioClient } from './lib/story-studio.js';
 import { flowCommand } from './lib/flow-exec.js';
 import { inventoryResult, resolveVideoModel, snapshotVideoModel } from './lib/video-models.js';
+import { classifyInterruptedItem, hasActiveDuplicate, migrateStoredQueue } from './lib/video-rules.js';
 
 const FLOW_URL = 'https://labs.google/fx/tools/flow';
 const FLOW_MATCH = 'https://labs.google/fx/*';
@@ -347,7 +348,10 @@ async function writeStatus(text, kind = 'info', details = {}) {
 }
 
 async function getQueue() {
-  return (await chrome.storage.local.get(QUEUE_KEY))[QUEUE_KEY] || [];
+  const stored = (await chrome.storage.local.get(QUEUE_KEY))[QUEUE_KEY] || [];
+  const migrated = migrateStoredQueue(stored);
+  if (migrated.changed) await chrome.storage.local.set({ [QUEUE_KEY]: migrated.queue });
+  return migrated.queue;
 }
 
 async function setQueue(queue) {
@@ -535,6 +539,7 @@ async function generateAndSave(item, settings, tab) {
   if (!item.startMediaId) {
     await patchItem(item.id, { phase: 'preparing' });
     if (item.videoSource === 'generate') {
+      await patchItem(item.id, { phase: 'image_submitting', imageSubmissionStartedAt: Date.now() });
       await writeStatus(`${item.label}: generating a start image…`, 'running');
       const generated = await runFlow(tab.id, 'generateImage', {
         projectId,
@@ -544,6 +549,7 @@ async function generateAndSave(item, settings, tab) {
         recaptchaMaxAttempts: 4,
       });
       item.startMediaId = generated.mediaId;
+      await patchItem(item.id, { startMediaId: item.startMediaId, phase: 'prepared' });
     } else {
       await writeStatus(`${item.label}: uploading the scene image…`, 'running');
       const image = await studio.sceneImageBase64(item.slug, item.episodeCode, item.sceneId);
@@ -555,7 +561,7 @@ async function generateAndSave(item, settings, tab) {
       });
       item.startMediaId = uploaded.mediaId;
     }
-    await patchItem(item.id, { startMediaId: item.startMediaId });
+    if (item.videoSource !== 'generate') await patchItem(item.id, { startMediaId: item.startMediaId, phase: 'prepared' });
   }
 
   if (!item.videoMediaId) {
@@ -657,12 +663,11 @@ async function enqueueScenes(payload) {
       imageModel: settings.imageModel,
       aspectRatio: payload.aspectRatio || settings.aspectRatio,
     };
-    if (active.has(itemKey(item))) {
+    if (hasActiveDuplicate(queue, item)) {
       skipped++;
       continue;
     }
     queue.push(item);
-    active.add(itemKey(item));
     added++;
   }
   await setQueue(queue);
@@ -725,7 +730,7 @@ async function enqueueStandalone(payload) {
       target: 'download',
       downloadPath: `StoryStudioVideos/Standalone/${sceneId}.mp4`,
     };
-    if (queue.some((candidate) => ['pending', 'running'].includes(candidate.status) && itemKey(candidate) === itemKey(item))) {
+    if (hasActiveDuplicate(queue, item)) {
       skipped += 1;
       continue;
     }
@@ -771,13 +776,12 @@ async function processQueue() {
         });
       } catch (error) {
         const latest = (await getQueue()).find((item) => item.id === current.id) || current;
-        const ambiguous =
-          latest.phase === 'submitting' && !latest.videoMediaId;
-        if (ambiguous) {
+        const recovery = classifyInterruptedItem(latest);
+        if (recovery.status === 'ambiguous') {
           await patchItem(current.id, {
             status: 'ambiguous',
-            error:
-              'The paid request may have reached Flow, but no media ID was returned. Inspect the Flow project before choosing to resubmit.',
+            ambiguityKind: recovery.ambiguityKind,
+            error: recovery.error,
             finishedAt: Date.now(),
           });
           await chrome.storage.local.set({ [PAUSED_KEY]: true });
@@ -827,9 +831,8 @@ async function retryItem(id, acceptAmbiguousRisk = false) {
     return { ok: false, ambiguous: true, error: 'Explicit duplicate-charge acceptance is required.' };
   }
   if (item.status === 'ambiguous') {
-    delete item.videoMediaId;
-    delete item.workflowId;
-    item.phase = 'prepared';
+    if (item.ambiguityKind === 'image') { delete item.startMediaId; delete item.imageSubmissionStartedAt; item.phase = 'queued'; }
+    else { delete item.submissionStartedAt; item.phase = 'prepared'; }
   }
   item.status = 'pending';
   delete item.error;
@@ -853,13 +856,7 @@ async function recoverInterruptedJobs() {
   for (const item of queue) {
     if (item.status !== 'running') continue;
     changed = true;
-    if (item.phase === 'submitting' && !item.videoMediaId) {
-      item.status = 'ambiguous';
-      item.error =
-        'The extension stopped during paid submission. Inspect Flow before explicitly resubmitting.';
-    } else {
-      item.status = 'pending';
-    }
+    Object.assign(item, classifyInterruptedItem(item));
   }
   if (changed) await setQueue(queue);
   if (queue.some((item) => item.status === 'pending')) {
