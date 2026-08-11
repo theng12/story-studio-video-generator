@@ -23,12 +23,14 @@ test('normalizes only exact provider keys paired with distinct labels', () => {
   );
 });
 
-test('uses live inventory when trustworthy entries exist and fallback otherwise', () => {
-  assert.deepEqual(inventoryResult([{ key: 'veo_4_i2v_fast', label: 'Veo 4 Fast' }]), {
+test('uses live inventory only for a signed Flow project and fallback otherwise', () => {
+  assert.deepEqual(inventoryResult([{ key: 'veo_4_i2v_fast', label: 'Veo 4 Fast' }], { signedIn: true, projectId: 'project-id' }), {
     source: 'live',
     models: [{ key: 'veo_4_i2v_fast', label: 'Veo 4 Fast' }],
   });
   assert.deepEqual(inventoryResult([]), { source: 'fallback', models: FALLBACK_VIDEO_MODELS });
+  assert.deepEqual(inventoryResult([{ key: 'veo_4_i2v_fast', label: 'Veo 4 Fast' }], { signedIn: false, projectId: 'project-id' }), { source: 'fallback', models: FALLBACK_VIDEO_MODELS });
+  assert.deepEqual(inventoryResult([{ key: 'veo_4_i2v_fast', label: 'Veo 4 Fast' }], { signedIn: true, projectId: '' }), { source: 'fallback', models: FALLBACK_VIDEO_MODELS });
 });
 
 test('resolves exact selections and refuses unknown or malformed keys', () => {
@@ -59,6 +61,7 @@ test('upgrades raw stored settings before defaults can hide the legacy field', (
 test('Flow exposes one read-only video inventory operation and no model fallback at submission', async () => {
   const source = await readFile(new URL('../src/lib/flow-exec.js', import.meta.url), 'utf8');
   assert.match(source, /listVideoModels/);
+  assert.match(source, /signedIn/);
   assert.match(source, /videoModelKey:\s*payload\.modelKey/);
   assert.doesNotMatch(source, /I2V_MODELS\[.*\]\s*\|\|/);
   assert.doesNotMatch(source, /transportKey/);

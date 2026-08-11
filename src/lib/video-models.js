@@ -27,9 +27,11 @@ export function normalizeVideoInventory(entries) {
   });
 }
 
-export function inventoryResult(entries) {
+export function inventoryResult(entries, context = {}) {
   const models = normalizeVideoInventory(entries);
-  return models.length ? { source: 'live', models } : { source: 'fallback', models: FALLBACK_VIDEO_MODELS };
+  return models.length && context.signedIn === true && String(context.projectId || '').trim()
+    ? { source: 'live', models }
+    : { source: 'fallback', models: FALLBACK_VIDEO_MODELS };
 }
 
 export function resolveVideoModel(key, models) {

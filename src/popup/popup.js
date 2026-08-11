@@ -2,6 +2,7 @@ import { getSettings, saveSettings } from '../lib/config.js';
 import { StudioClient } from '../lib/story-studio.js';
 import { initTheme } from '../lib/theme.js';
 import { eligibleVideoScenes } from '../lib/video-rules.js';
+import { ambiguityRetryCopy, isCurrentLoad, sceneEnqueueContext } from '../lib/video-panel.js';
 
 const $ = (id) => document.getElementById(id);
 let settings;
@@ -13,6 +14,7 @@ let elapsedStartedAt = 0;
 let latestLiveStatus = null;
 let activeCooldownUntil = 0;
 let modelInventorySource = 'fallback';
+let storyLoadToken = 0;
 
 function renderModelInventory(inventory) {
   const models = Array.isArray(inventory?.models) ? inventory.models : [];
@@ -217,8 +219,10 @@ async function testStudioConnection() {
 async function loadEpisodes() {
   const slug = $('project').value;
   if (!slug) return;
+  const token = ++storyLoadToken;
   setStatus('Loading episodes…');
   const data = await studio.listEpisodes(slug);
+  if (!isCurrentLoad(token, storyLoadToken, { slug, episodeCode: '' }, { slug: $('project').value, episodeCode: '' })) return;
   episodes = (Array.isArray(data) ? data : data.episodes || [])
     .map((episode) => ({
       code: episode.episode_code || episode.code,
@@ -253,8 +257,10 @@ async function loadScenes() {
     return;
   }
 
+  const token = ++storyLoadToken;
   setStatus('Loading eligible video scenes…');
   const data = await studio.sceneReview(slug, code);
+  if (!isCurrentLoad(token, storyLoadToken, { slug, episodeCode: code }, { slug: $('project').value, episodeCode: $('episode').value })) return;
   scenes = eligibleVideoScenes(data);
 
   settings = await saveSettings({ lastProject: slug, lastEpisode: code });
@@ -317,6 +323,10 @@ function confirmQueue() {
     return;
   }
 
+  const project = projects.find((candidate) => candidate.slug === $('project').value);
+  const episode = episodes.find((candidate) => candidate.code === $('episode').value);
+  if (!project || !episode) return setStatus('Choose a project and episode first.', 'failed');
+  const context = sceneEnqueueContext(project, episode, selected);
   showConfirmation({
     title: 'Generate scene videos?',
     body:
@@ -324,20 +334,14 @@ function confirmQueue() {
       'Each request may use account credits.',
     confirmLabel: 'Use credits & queue',
     onConfirm: async () => {
-      const project = projects.find((candidate) => candidate.slug === $('project').value);
-      const episode = episodes.find((candidate) => candidate.code === $('episode').value);
       const response = await chrome.runtime.sendMessage({
         type: 'enqueueScenes',
         payload: {
-          slug: $('project').value,
-          projectName: project?.name || $('project').value,
-          episodeCode: $('episode').value,
-          episodeTitle: episode?.title || '',
+          ...context,
           projectId: settings.flowProjectId,
           ...modelSnapshot(),
           videoSource: settings.videoSource,
           aspectRatio: settings.aspectRatio,
-          scenes: selected,
         },
       });
       if (!response?.ok) throw new Error(response?.error || 'Could not queue videos.');
@@ -406,20 +410,19 @@ function confirmStandalone() {
 }
 
 function showAmbiguousRetry(item) {
+  const copy = ambiguityRetryCopy(item);
   showConfirmation({
-    title: 'Resubmit a request that needs review?',
-    body:
-      'The previous request may already have been accepted. Inspect the generation workspace first. ' +
-      'Resubmitting may use credits twice.',
-    confirmLabel: 'Resubmit and accept risk',
+    title: copy.title,
+    body: copy.body,
+    confirmLabel: copy.confirmLabel,
     onConfirm: async () => {
       const response = await chrome.runtime.sendMessage({
         type: 'retryItem',
         id: item.id,
         acceptAmbiguousRisk: true,
       });
-      if (!response?.ok) throw new Error(response?.error || 'Could not resubmit this video.');
-      setStatus('Video resubmitted with duplicate-credit risk accepted.', 'ok');
+      if (!response?.ok) throw new Error(response?.error || 'Could not retry this request.');
+      setStatus(copy.status, 'ok');
       await pollQueue();
     },
   });

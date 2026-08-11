@@ -414,7 +414,7 @@ async function flowContext() {
 async function refreshFlowModels(tab) {
   const activeTab = tab || await ensureFlowTab();
   const discovered = await runFlow(activeTab.id, 'listVideoModels');
-  const inventory = { ...inventoryResult(discovered.entries), refreshedAt: Date.now() };
+  const inventory = { ...inventoryResult(discovered.entries, discovered), refreshedAt: Date.now() };
   await chrome.storage.local.set({ [FLOW_MODEL_INVENTORY_KEY]: inventory });
   return { ok: true, ...inventory };
 }

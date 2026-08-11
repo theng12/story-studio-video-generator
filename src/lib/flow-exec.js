@@ -218,7 +218,9 @@ export async function flowCommand(command) {
       for (const element of document.querySelectorAll('[role="option"][data-video-model-key]')) {
         add(element.getAttribute('data-video-model-key'), element.textContent);
       }
-      return { entries };
+      let signedIn = false;
+      try { await accessToken(); signedIn = true; } catch { /* fall back without claiming live inventory */ }
+      return { entries, signedIn, projectId: currentProjectId() };
     };
     const submitVideoStartImage = async () => {
       const projectId = projectIdFor(payload.projectId);
