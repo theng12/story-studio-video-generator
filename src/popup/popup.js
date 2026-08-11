@@ -1,6 +1,7 @@
 import { getSettings, saveSettings } from '../lib/config.js';
 import { StudioClient } from '../lib/story-studio.js';
 import { initTheme } from '../lib/theme.js';
+import { eligibleVideoScenes } from '../lib/video-rules.js';
 
 const $ = (id) => document.getElementById(id);
 let settings;
@@ -254,24 +255,7 @@ async function loadScenes() {
 
   setStatus('Loading eligible video scenes…');
   const data = await studio.sceneReview(slug, code);
-  const minimumDuration = Number(data?.animate_min_seconds) || 0;
-  scenes = (data?.scenes || [])
-    .filter(
-      (scene) =>
-        scene.approved === true &&
-        scene.image_filename != null &&
-        String(scene.motion_prompt || '').trim() &&
-        Number(scene.end_sec) - Number(scene.start_sec) >= minimumDuration
-    )
-    .map((scene) => ({
-      id: scene.id,
-      sceneIndex: scene.scene_index,
-      label: `Scene ${scene.scene_index}`,
-      motionPrompt: scene.motion_prompt,
-      imagePrompt: scene.visual_prompt || '',
-      durationSec: Math.max(0, Number(scene.end_sec) - Number(scene.start_sec)),
-      hasClip: Boolean(scene.clip_exists && !scene.clip_stale),
-    }));
+  scenes = eligibleVideoScenes(data);
 
   settings = await saveSettings({ lastProject: slug, lastEpisode: code });
   renderScenes();

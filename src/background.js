@@ -7,7 +7,7 @@ import {
 import { StudioClient } from './lib/story-studio.js';
 import { flowCommand } from './lib/flow-exec.js';
 import { inventoryResult, resolveVideoModel, snapshotVideoModel } from './lib/video-models.js';
-import { classifyInterruptedItem, hasActiveDuplicate, migrateStoredQueue } from './lib/video-rules.js';
+import { classifyInterruptedItem, hasActiveDuplicate, isAllowedFleetQueueAction, migrateStoredQueue, standaloneDownloadPath } from './lib/video-rules.js';
 
 const FLOW_URL = 'https://labs.google/fx/tools/flow';
 const FLOW_MATCH = 'https://labs.google/fx/*';
@@ -199,6 +199,7 @@ async function runFleetCommand(command, state, identity) {
   const action = fleetText(command?.action, 80);
   const receipt = { commandId, action, at: Date.now(), status: 'rejected' };
   if (!commandId || !action) return { ...receipt, reason: 'Invalid command.' };
+  if (!isAllowedFleetQueueAction(action)) return { ...receipt, reason: 'Unsupported Fleet action.' };
   if (!Number.isInteger(command.expectedQueueRevision) || command.expectedQueueRevision !== state.revision) {
     return { ...receipt, reason: 'Queue revision no longer matches.' };
   }
@@ -728,7 +729,7 @@ async function enqueueStandalone(payload) {
       imageModel: settings.imageModel,
       aspectRatio: payload.aspectRatio || settings.aspectRatio,
       target: 'download',
-      downloadPath: `StoryStudioVideos/Standalone/${sceneId}.mp4`,
+      downloadPath: standaloneDownloadPath(sceneId),
     };
     if (hasActiveDuplicate(queue, item)) {
       skipped += 1;

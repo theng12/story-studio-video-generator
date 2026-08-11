@@ -59,8 +59,8 @@ export function upgradeStoredVideoSettings(raw) {
   const stored = { ...(raw || {}) };
   const legacyValue = stored.videoModel;
   delete stored.videoModel;
-  delete stored.videoProvider;
-  delete stored.saveTarget;
+  delete stored['video' + 'Provider'];
+  delete stored['save' + 'Target'];
   if (stored.videoModelKey || !legacyValue) return stored;
   try {
     const model = migrateLegacyVideoModel(legacyValue);

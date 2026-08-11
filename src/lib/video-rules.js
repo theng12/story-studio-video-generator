@@ -2,6 +2,13 @@ import { migrateLegacyVideoModel } from './video-models.js';
 
 const imageError = 'Fresh-image generation may have reached Flow. Inspect the Flow project before explicitly regenerating it.';
 const videoError = 'Paid video submission may have reached Flow. Inspect the Flow project before explicitly resubmitting it.';
+export const FLEET_QUEUE_ACTIONS = Object.freeze(['pause_after_current', 'resume_hub_pause', 'clear_pending']);
+export const isAllowedFleetQueueAction = (action) => FLEET_QUEUE_ACTIONS.includes(action);
+export const standaloneDownloadPath = (sceneId) => `StoryStudioVideos/Standalone/${sceneId}.mp4`;
+export function eligibleVideoScenes(review) {
+  const minimum = Number(review?.animate_min_seconds) || 0;
+  return (review?.scenes || []).filter((scene) => scene.approved === true && scene.image_filename != null && String(scene.motion_prompt || '').trim() && Number(scene.end_sec) - Number(scene.start_sec) >= minimum).map((scene) => ({ id: scene.id, sceneIndex: scene.scene_index, label: `Scene ${scene.scene_index}`, motionPrompt: scene.motion_prompt, imagePrompt: scene.visual_prompt || scene.image_prompt || '', durationSec: Math.max(0, Number(scene.end_sec) - Number(scene.start_sec)), hasClip: Boolean((scene.clip_exists && !scene.clip_stale) || scene.clip_filename || scene.video_filename) }));
+}
 
 export function classifyInterruptedItem(item) {
   if (item.videoMediaId) return { status: 'pending', phase: 'polling' };
