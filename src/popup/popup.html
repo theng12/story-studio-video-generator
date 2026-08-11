@@ -72,11 +72,6 @@
     </label>
 
     <div class="form-grid form-grid-two">
-      <label>Provider
-        <select id="videoProvider">
-          <option value="workspace">Connected workspace</option>
-        </select>
-      </label>
       <label>Video
         <select id="assetType" disabled aria-label="Video asset type">
           <option value="scene-videos">Scene videos</option>
@@ -95,13 +90,9 @@
       </summary>
       <section class="settings-card">
         <label>Video model
-          <select id="videoModel">
-            <option value="omni-flash">Omni Flash — audio</option>
-            <option value="veo-3.1-lite">Veo 3.1 Lite</option>
-            <option value="veo-3.1-fast">Veo 3.1 Fast</option>
-            <option value="veo-3.1-quality">Veo 3.1 Quality</option>
-          </select>
+          <select id="videoModel"></select>
         </label>
+        <div class="inventory-row"><span id="modelInventoryState" class="muted" aria-live="polite"></span><button id="refreshModels" class="small" type="button">Refresh models</button></div>
         <label>Start image
           <select id="videoSource">
             <option value="existing">Existing scene image</option>

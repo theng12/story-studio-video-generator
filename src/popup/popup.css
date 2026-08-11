@@ -527,6 +527,7 @@ label.check input { width: auto; margin: 0; flex: none; }
 .queue-legend .ambiguous { color: var(--review); }
 
 #status { min-height: 16px; }
+.inventory-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; grid-column: 1 / -1; }
 #status.failed { color: var(--danger); }
 #status.ok { color: var(--ok); }
 

@@ -46,6 +46,15 @@ export function migrateLegacyVideoModel(value) {
   return { ...match };
 }
 
+export function snapshotVideoModel(key, models, source) {
+  const model = resolveVideoModel(key, models);
+  return {
+    videoModelKey: model.key,
+    videoModelLabel: model.label,
+    videoModelSource: source === 'live' ? 'live' : 'fallback',
+  };
+}
+
 export function upgradeStoredVideoSettings(raw) {
   const stored = { ...(raw || {}) };
   const legacyValue = stored.videoModel;

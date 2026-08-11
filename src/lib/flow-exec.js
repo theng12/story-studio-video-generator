@@ -28,12 +28,6 @@ export async function flowCommand(command) {
       '16:9': 'VIDEO_ASPECT_RATIO_LANDSCAPE',
       '9:16': 'VIDEO_ASPECT_RATIO_PORTRAIT',
     };
-    const I2V_MODELS = {
-      'veo-3.1-fast': 'veo_3_1_i2v_fast',
-      'veo-3.1-lite': 'veo_3_1_i2v_lite',
-      'veo-3.1-quality': 'veo_3_1_i2v_quality',
-      'omni-flash': 'abra_i2v_4s',
-    };
     const payload = command?.payload || {};
 
     const uuid = () =>
@@ -212,18 +206,27 @@ export async function flowCommand(command) {
       if (!json?.media?.name) throw new Error('Flow upload returned no media id.');
       return { mediaId: json.media.name };
     };
-    const i2vModelKey = (modelId, durationSec) => {
-      if (modelId === 'omni-flash') {
-        const requested = Math.ceil(Number(durationSec) || 4);
-        const duration = [4, 6, 8, 10].find((value) => value >= requested) || 10;
-        return `abra_i2v_${duration}`;
+    const listVideoModels = async () => {
+      const entries = [];
+      const add = (key, label) => entries.push({ key: String(key || ''), label: String(label || '') });
+      const nextData = window.__NEXT_DATA__ || (() => {
+        try { return JSON.parse(document.querySelector('script#__NEXT_DATA__')?.textContent || 'null'); }
+        catch { return null; }
+      })();
+      const configs = nextData?.props?.pageProps?.videoModelConfigs;
+      for (const config of Array.isArray(configs) ? configs : []) add(config.videoModelKey, config.displayName);
+      for (const element of document.querySelectorAll('[role="option"][data-video-model-key]')) {
+        add(element.getAttribute('data-video-model-key'), element.textContent);
       }
-      return I2V_MODELS[modelId] || 'veo_3_1_i2v_fast';
+      return { entries };
     };
     const submitVideoStartImage = async () => {
       const projectId = projectIdFor(payload.projectId);
       if (!projectId) throw new Error('No Flow project selected.');
       if (!payload.mediaId) throw new Error('Video submission needs a start-image media id.');
+      if (!/^[a-z0-9][a-z0-9_.-]{2,127}$/.test(String(payload.modelKey || ''))) {
+        throw new Error('Video submission needs an exact Flow model key.');
+      }
       const token = await mintToken('VIDEO_GENERATION');
       const clientContext = {
         projectId,
@@ -250,7 +253,7 @@ export async function flowCommand(command) {
               textInput: {
                 structuredPrompt: { parts: [{ text: payload.motionPrompt || '' }] },
               },
-              videoModelKey: i2vModelKey(payload.model, payload.durationSec),
+              videoModelKey: payload.modelKey,
               seed: Number.isFinite(payload.seed) ? payload.seed : randomSeed(),
               metadata: {},
               startImage: {
@@ -270,11 +273,7 @@ export async function flowCommand(command) {
       const json = await response.json();
       const mediaId = json?.media?.[0]?.name;
       if (!mediaId) throw new Error('Flow video submit returned no media id.');
-      return {
-        mediaId,
-        workflowId: json?.workflows?.[0]?.name || null,
-        remainingCredits: json?.remainingCredits,
-      };
+      return { mediaId };
     };
     const checkVideo = async () => {
       const projectId = projectIdFor(payload.projectId);
@@ -295,7 +294,6 @@ export async function flowCommand(command) {
         status,
         done: status === 'MEDIA_GENERATION_STATUS_SUCCESSFUL',
         failed: /FAILED|ERROR|CANCELL?ED/i.test(status),
-        remainingCredits: json?.remainingCredits,
       };
     };
     const getContext = async () => {
@@ -333,6 +331,7 @@ export async function flowCommand(command) {
     const handlers = {
       generateImage,
       uploadImage,
+      listVideoModels,
       submitVideoStartImage,
       checkVideo,
       getContext,

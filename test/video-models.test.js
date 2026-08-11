@@ -1,11 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import {
   FALLBACK_VIDEO_MODELS,
   inventoryResult,
   migrateLegacyVideoModel,
   normalizeVideoInventory,
   resolveVideoModel,
+  snapshotVideoModel,
   upgradeStoredVideoSettings,
 } from '../src/lib/video-models.js';
 
@@ -52,4 +54,37 @@ test('upgrades raw stored settings before defaults can hide the legacy field', (
     theme: 'dark',
   });
   assert.deepEqual(upgradeStoredVideoSettings({ videoModel: 'unknown-old-value' }), {});
+});
+
+test('Flow exposes one read-only video inventory operation and no model fallback at submission', async () => {
+  const source = await readFile(new URL('../src/lib/flow-exec.js', import.meta.url), 'utf8');
+  assert.match(source, /listVideoModels/);
+  assert.match(source, /videoModelKey:\s*payload\.modelKey/);
+  assert.doesNotMatch(source, /I2V_MODELS\[.*\]\s*\|\|/);
+  assert.doesNotMatch(source, /transportKey/);
+  assert.doesNotMatch(source, /script\[type=.*application\/json/);
+});
+
+test('queue snapshots exact model metadata and removes provider state', async () => {
+  const source = await readFile(new URL('../src/background.js', import.meta.url), 'utf8');
+  assert.match(source, /videoModelKey:\s*model\.key/);
+  assert.match(source, /videoModelLabel:\s*model\.label/);
+  assert.doesNotMatch(source, /videoProvider:/);
+});
+
+test('snapshotVideoModel returns executable exact queue metadata and refuses stale selections', () => {
+  const models = [{ key: 'veo_4_i2v_fast', label: 'Veo 4 Fast' }];
+  assert.deepEqual(snapshotVideoModel('veo_4_i2v_fast', models, 'live'), {
+    videoModelKey: 'veo_4_i2v_fast',
+    videoModelLabel: 'Veo 4 Fast',
+    videoModelSource: 'live',
+  });
+  assert.throws(() => snapshotVideoModel('removed_key', models, 'live'), /not available/);
+});
+
+test('panel identifies live or fallback inventory and has an explicit refresh action', async () => {
+  const html = await readFile(new URL('../src/popup/popup.html', import.meta.url), 'utf8');
+  assert.match(html, /id="modelInventoryState"/);
+  assert.match(html, /id="refreshModels"/);
+  assert.doesNotMatch(html, /id="videoProvider"/);
 });

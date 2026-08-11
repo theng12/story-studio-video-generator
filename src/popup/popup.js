@@ -11,6 +11,30 @@ let scenes = [];
 let elapsedStartedAt = 0;
 let latestLiveStatus = null;
 let activeCooldownUntil = 0;
+let modelInventorySource = 'fallback';
+
+function renderModelInventory(inventory) {
+  const models = Array.isArray(inventory?.models) ? inventory.models : [];
+  $('videoModel').replaceChildren(...models.map((model) => new Option(model.label, model.key)));
+  if (models.some((model) => model.key === settings.videoModelKey)) $('videoModel').value = settings.videoModelKey;
+  modelInventorySource = inventory?.source === 'live' ? 'live' : 'fallback';
+  $('modelInventoryState').textContent = modelInventorySource === 'live' ? 'Live from this Flow workspace' : 'Tested fallback catalog';
+}
+
+async function refreshModels() {
+  const inventory = await chrome.runtime.sendMessage({ type: 'refreshFlowModels' });
+  if (!inventory?.ok) throw new Error(inventory?.error || 'Could not refresh Flow models.');
+  renderModelInventory(inventory);
+}
+
+function modelSnapshot() {
+  const option = $('videoModel').selectedOptions[0];
+  return {
+    videoModelKey: $('videoModel').value,
+    videoModelLabel: option?.textContent || '',
+    videoModelSource: modelInventorySource,
+  };
+}
 
 function setStatus(text, kind = '') {
   $('status').textContent = text;
@@ -269,6 +293,7 @@ async function useCurrentWorkspace() {
     flowProjectName: context.projectId,
   });
   renderWorkspace();
+  await refreshModels();
   setStatus('Generation workspace selected.', 'ok');
 }
 
@@ -325,8 +350,7 @@ function confirmQueue() {
           episodeCode: $('episode').value,
           episodeTitle: episode?.title || '',
           projectId: settings.flowProjectId,
-          videoProvider: settings.videoProvider,
-          videoModel: settings.videoModel,
+          ...modelSnapshot(),
           videoSource: settings.videoSource,
           aspectRatio: settings.aspectRatio,
           scenes: selected,
@@ -383,8 +407,7 @@ function confirmStandalone() {
         payload: {
           prompts: standalonePrompts,
           projectId: settings.flowProjectId,
-          videoProvider: settings.videoProvider,
-          videoModel: settings.videoModel,
+          ...modelSnapshot(),
           aspectRatio: settings.aspectRatio,
         },
       });
@@ -808,8 +831,7 @@ async function init() {
 
   settings = await getSettings();
   studio = new StudioClient(settings.studioBaseUrl);
-  $('videoProvider').value = settings.videoProvider;
-  $('videoModel').value = settings.videoModel;
+  await refreshModels();
   $('videoSource').value = settings.videoSource;
   $('aspectRatio').value = settings.aspectRatio;
   renderWorkingMode();
@@ -851,6 +873,7 @@ async function init() {
   $('useFlow').addEventListener('click', () => {
     useCurrentWorkspace().catch((error) => setStatus(publicMessage(error.message), 'failed'));
   });
+  $('refreshModels').addEventListener('click', () => refreshModels().catch((error) => setStatus(publicMessage(error.message), 'failed')));
   $('newFlow').addEventListener('click', async () => {
     const result = await chrome.runtime.sendMessage({ type: 'newFlowProject' });
     if (!result?.ok) {
@@ -880,7 +903,11 @@ async function init() {
     await pollQueue();
   });
 
-  for (const field of ['videoProvider', 'videoModel', 'videoSource', 'aspectRatio']) {
+  $('videoModel').addEventListener('change', async () => {
+    const snapshot = modelSnapshot();
+    settings = await saveSettings(snapshot);
+  });
+  for (const field of ['videoSource', 'aspectRatio']) {
     $(field).addEventListener('change', async () => {
       settings = await saveSettings({ [field]: $(field).value });
     });

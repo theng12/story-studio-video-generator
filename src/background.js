@@ -6,10 +6,12 @@ import {
 } from './lib/config.js';
 import { StudioClient } from './lib/story-studio.js';
 import { flowCommand } from './lib/flow-exec.js';
+import { inventoryResult, resolveVideoModel, snapshotVideoModel } from './lib/video-models.js';
 
 const FLOW_URL = 'https://labs.google/fx/tools/flow';
 const FLOW_MATCH = 'https://labs.google/fx/*';
 const QUEUE_KEY = 'videoQueue';
+const FLOW_MODEL_INVENTORY_KEY = 'flowVideoModelInventory';
 const PAUSED_KEY = 'videoQueuePaused';
 const STATUS_KEY = 'lastVideoStatus';
 const NEXT_RUN_KEY = 'nextVideoProviderRunAt';
@@ -404,6 +406,19 @@ async function flowContext() {
   return { ok: true, ...(await runFlow(tab.id, 'getContext')) };
 }
 
+async function refreshFlowModels(tab) {
+  const activeTab = tab || await ensureFlowTab();
+  const discovered = await runFlow(activeTab.id, 'listVideoModels');
+  const inventory = { ...inventoryResult(discovered.entries), refreshedAt: Date.now() };
+  await chrome.storage.local.set({ [FLOW_MODEL_INVENTORY_KEY]: inventory });
+  return { ok: true, ...inventory };
+}
+
+async function requireCurrentModel(modelKey, tab) {
+  const inventory = await refreshFlowModels(tab);
+  return { ...resolveVideoModel(modelKey, inventory.models), source: inventory.source };
+}
+
 async function createFlowProject() {
   const tab = await ensureFlowTab();
   const created = await runFlow(tab.id, 'createProject');
@@ -510,6 +525,13 @@ async function generateAndSave(item, settings, tab) {
   if (!projectId) throw new Error('No Flow project selected.');
   const studio = new StudioClient(settings.studioBaseUrl);
 
+  if (!item.videoMediaId) {
+    const model = await requireCurrentModel(item.videoModelKey, tab);
+    if (model.label !== item.videoModelLabel) {
+      throw new Error('The selected Flow model changed. Refresh models and queue again.');
+    }
+  }
+
   if (!item.startMediaId) {
     await patchItem(item.id, { phase: 'preparing' });
     if (item.videoSource === 'generate') {
@@ -545,14 +567,13 @@ async function generateAndSave(item, settings, tab) {
       projectId,
       mediaId: item.startMediaId,
       motionPrompt: item.motionPrompt,
-      model: item.videoModel,
+      modelKey: item.videoModelKey,
       aspectRatio: item.aspectRatio,
       durationSec: item.durationSec,
     });
     item.videoMediaId = submitted.mediaId;
     await patchItem(item.id, {
       videoMediaId: submitted.mediaId,
-      workflowId: submitted.workflowId,
       phase: 'polling',
     });
   }
@@ -599,6 +620,14 @@ async function enqueueScenes(payload) {
   const settings = await getSettings();
   const projectId = normalizeFlowProjectId(payload.projectId || settings.flowProjectId);
   if (!projectId) throw new Error('Select a Flow project before queuing videos.');
+  const inventory = await refreshFlowModels();
+  const snapshot = snapshotVideoModel(payload.videoModelKey, inventory.models, inventory.source);
+  const model = { key: snapshot.videoModelKey, label: snapshot.videoModelLabel };
+  const queueModel = {
+    videoModelKey: model.key,
+    videoModelLabel: model.label,
+    videoModelSource: snapshot.videoModelSource,
+  };
   const queue = await getQueue();
   const active = new Set(
     queue
@@ -623,8 +652,7 @@ async function enqueueScenes(payload) {
       imagePrompt: scene.imagePrompt || '',
       durationSec: scene.durationSec,
       projectId,
-      videoProvider: payload.videoProvider || settings.videoProvider,
-      videoModel: payload.videoModel || settings.videoModel,
+      ...queueModel,
       videoSource: payload.videoSource || settings.videoSource,
       imageModel: settings.imageModel,
       aspectRatio: payload.aspectRatio || settings.aspectRatio,
@@ -662,6 +690,14 @@ async function enqueueStandalone(payload) {
     : [String(payload?.prompt || '').trim()].filter(Boolean);
   if (!projectId) throw new Error('Select a generation workspace before queuing a video.');
   if (!prompts.length) throw new Error('Enter at least one video prompt before queuing.');
+  const inventory = await refreshFlowModels();
+  const snapshot = snapshotVideoModel(payload.videoModelKey, inventory.models, inventory.source);
+  const model = { key: snapshot.videoModelKey, label: snapshot.videoModelLabel };
+  const queueModel = {
+    videoModelKey: model.key,
+    videoModelLabel: model.label,
+    videoModelSource: snapshot.videoModelSource,
+  };
   const queue = await getQueue();
   let added = 0;
   let skipped = 0;
@@ -682,8 +718,7 @@ async function enqueueStandalone(payload) {
       imagePrompt: prompt,
       durationSec: 4,
       projectId,
-      videoProvider: payload.videoProvider || settings.videoProvider,
-      videoModel: payload.videoModel || settings.videoModel,
+      ...queueModel,
       videoSource: 'generate',
       imageModel: settings.imageModel,
       aspectRatio: payload.aspectRatio || settings.aspectRatio,
@@ -880,6 +915,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       return true;
     case 'flowContext':
       reply(flowContext());
+      return true;
+    case 'refreshFlowModels':
+      reply(refreshFlowModels());
       return true;
     case 'newFlowProject':
       reply(createFlowProject());
