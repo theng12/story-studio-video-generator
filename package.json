@@ -1,0 +1,8 @@
+{
+  "name": "story-studio-video-generator",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  }
+}

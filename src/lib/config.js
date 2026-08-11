@@ -1,17 +1,17 @@
+import { upgradeStoredVideoSettings } from './video-models.js';
+
 export const DEFAULTS = {
   theme: 'system',
   mode: 'studio',
   studioBaseUrl: 'http://localhost:8766',
   flowProjectId: '',
   flowProjectName: '',
-  // Stored separately from the workspace so additional generation backends can
-  // be added later without changing existing queue items.
-  videoProvider: 'workspace',
-  videoModel: 'veo-3.1-fast',
+  videoModelKey: 'veo_3_1_i2v_fast',
+  videoModelLabel: 'Veo 3.1 Fast',
+  videoModelSource: 'fallback',
   videoSource: 'existing',
   imageModel: 'nano-banana-2',
   aspectRatio: '16:9',
-  saveTarget: 'project',
   humanDelayMinSec: 5,
   humanDelayMaxSec: 60,
   // A temporary service limit can either pause the queue for review or wait
@@ -51,8 +51,6 @@ function normalize(settings) {
   };
   settings.flowProjectId = normalizeFlowProjectId(settings.flowProjectId);
   if (!['studio', 'standalone'].includes(settings.mode)) settings.mode = DEFAULTS.mode;
-  if (!['project', 'download'].includes(settings.saveTarget)) settings.saveTarget = DEFAULTS.saveTarget;
-  if (!['workspace'].includes(settings.videoProvider)) settings.videoProvider = DEFAULTS.videoProvider;
   if (!['existing', 'generate'].includes(settings.videoSource)) settings.videoSource = DEFAULTS.videoSource;
   if (!['16:9', '9:16'].includes(settings.aspectRatio)) settings.aspectRatio = DEFAULTS.aspectRatio;
   settings.fleetEnabled = settings.fleetEnabled === true;
@@ -65,7 +63,12 @@ function normalize(settings) {
 
 export async function getSettings() {
   const stored = await chrome.storage.sync.get(STORAGE_KEY);
-  return normalize({ ...DEFAULTS, ...(stored[STORAGE_KEY] || {}) });
+  const raw = stored[STORAGE_KEY] || {};
+  const upgraded = upgradeStoredVideoSettings(raw);
+  if (JSON.stringify(upgraded) !== JSON.stringify(raw)) {
+    await chrome.storage.sync.set({ [STORAGE_KEY]: upgraded });
+  }
+  return normalize({ ...DEFAULTS, ...upgraded });
 }
 
 export async function saveSettings(patch) {
