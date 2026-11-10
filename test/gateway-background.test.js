@@ -326,6 +326,82 @@ test('token change while claim is in flight prevents provider work', async () =>
   } finally { worker.restore(); }
 });
 
+for (const durationSec of [4, 8]) {
+  test(`Standalone ${durationSec}s selection reaches persisted row and Flow without a hardcoded length`, async () => {
+    const model = FALLBACK_VIDEO_MODELS.find((entry) => entry.mode === 'text' && entry.durationSec === durationSec);
+    const worker = await boot({ mode: 'standalone' });
+    try {
+      const result = await worker.send({ type: 'enqueueStandalone', payload: {
+        prompts: ['Keep this length.'], projectId: PROJECT, videoMode: 'text', videoModelKey: model.key, durationSec,
+      } });
+      assert.equal(result.ok, true, result.error);
+      await waitFor(() => queueItem(worker)?.status === 'done'); await worker.settled();
+      const row = queueItem(worker);
+      assert.equal(row.durationSec, durationSec);
+      assert.equal(row.videoModelBinding.durationSec, durationSec);
+      const payload = worker.provider.find(({ op }) => op === 'submitVideo').payload;
+      assert.equal(payload.durationSec, durationSec);
+      assert.deepEqual(payload.modelBinding, row.videoModelBinding);
+      assert.equal(payload.modelKey, model.key);
+      assert.equal(count(worker, '/claim'), 0);
+    } finally { worker.restore(); }
+  });
+}
+
+test('Story explicit clip length is bound separately from scene timeline length', async () => {
+  const model = FALLBACK_VIDEO_MODELS.find((entry) => entry.mode === 'text' && entry.durationSec === 4);
+  const worker = await boot({ mode: 'studio' });
+  try {
+    const result = await worker.send({ type: 'enqueueScenes', payload: {
+      slug: 'fixture', episodeCode: 'E01', projectId: PROJECT, videoMode: 'text', videoModelKey: model.key,
+      durationSec: 4, scenes: [{ id: 'scene-1', motionPrompt: 'Slow push.', durationSec: 12 }],
+    } });
+    assert.equal(result.ok, true, result.error);
+    await waitFor(() => queueItem(worker)?.status === 'done'); await worker.settled();
+    assert.equal(queueItem(worker).durationSec, 4);
+    assert.equal(queueItem(worker).sceneDurationSec, 12);
+    assert.equal(worker.provider.find(({ op }) => op === 'submitVideo').payload.durationSec, 4);
+    assert.equal(count(worker, '/upload-clip/scene-1'), 1);
+  } finally { worker.restore(); }
+});
+
+test('unverified Standalone duration is refused before queueing or fresh-image generation', async () => {
+  const model = FALLBACK_VIDEO_MODELS.find((entry) => entry.mode === 'image');
+  const worker = await boot({ mode: 'standalone' });
+  try {
+    const reply = await worker.send({ type: 'enqueueStandalone', payload: {
+      prompts: ['Never generate.'], projectId: PROJECT, videoMode: 'image', videoModelKey: model.key, durationSec: 6,
+    } });
+    assert.equal(reply.ok, false);
+    assert.match(reply.error, /unavailable/);
+    assert.equal(worker.local.videoQueue?.length || 0, 0);
+    assert.equal(worker.provider.filter(({ op }) => ['submitVideo', 'generateImage', 'uploadImage'].includes(op)).length, 0);
+  } finally { worker.restore(); }
+});
+
+test('queue restart retains duration and binding and refuses a changed request mapping', async () => {
+  const model = FALLBACK_VIDEO_MODELS.find((entry) => entry.mode === 'text' && entry.durationSec === 4);
+  const binding = { modelKey: model.key, mode: 'text', durationSec: 4, rpcId: 'YhhmEf' };
+  const row = { id: 'restart-duration', status: 'running', phase: 'queued', videoMode: 'text',
+    videoModelKey: model.key, videoModelLabel: model.label, videoModelBinding: binding, durationSec: 4,
+    target: 'download', projectId: PROJECT, motionPrompt: 'Keep the exact selection.' };
+  const worker = await boot({ mode: 'standalone', local: { videoQueuePaused: true, videoQueue: [row] },
+    flowReplies: { listVideoModels: { entries: [{ ...model, durationSec: 6 }], signedIn: true, projectId: PROJECT } },
+  });
+  try {
+    const stored = (await worker.send({ type: 'getQueue' })).queue[0];
+    assert.equal(stored.status, 'pending');
+    assert.equal(stored.durationSec, 4);
+    assert.deepEqual(stored.videoModelBinding, binding);
+    await worker.send({ type: 'resumeQueue' });
+    await waitFor(() => queueItem(worker)?.status === 'failed'); await worker.settled();
+    assert.equal(queueItem(worker).durationSec, 4);
+    assert.deepEqual(queueItem(worker).videoModelBinding, binding);
+    assert.match(queueItem(worker).error, /duration does not match/);
+    assert.equal(generated(worker), 0);
+  } finally { worker.restore(); }
+});
+
 for (const mode of ['studio', 'standalone']) {
   test(`${mode} still polls known video and saves exact bytes without Gateway requests`, async () => {
     const item = { id: 'local-video', status: 'pending', phase: 'polling', videoMediaId: 'known-video', projectId: PROJECT, videoMode: 'text', sceneId: 'scene-1', slug: 'fixture', episodeCode: 'E01', label: 'Fixture video', target: mode === 'standalone' ? 'download' : undefined, downloadPath: 'StoryStudioVideos/Standalone/fixture.mp4' };

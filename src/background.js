@@ -565,7 +565,7 @@ async function flowContext() {
 async function refreshFlowModels(tab) {
   const activeTab = tab || await ensureFlowTab();
   const discovered = await runFlow(activeTab.id, 'listVideoModels');
-  const inventory = { ...inventoryResult(discovered.entries, discovered), refreshedAt: Date.now() };
+  const inventory = { ...inventoryResult(discovered.entries, discovered), observedSelection: discovered.observedSelection || null, refreshedAt: Date.now() };
   await chrome.storage.local.set({ [FLOW_MODEL_INVENTORY_KEY]: inventory });
   return { ok: true, ...inventory };
 }
@@ -696,17 +696,18 @@ async function generateAndSave(item, settings, tab) {
 
   if (!item.videoMediaId) {
     const model = await requireCurrentModel(item.videoModelKey, tab, mode);
-    if (item.gatewayJobId) {
-      if (model.source !== 'live') throw new Error('Live Flow model availability is unknown; Gateway video was not submitted.');
-      // Captured Flow keys encode their duration; never silently substitute another length.
-      const duration = Number(model.key.match(/_(\d+)s$/)?.[1]);
-      if (!Number.isSafeInteger(duration) || duration <= 0 || duration !== item.durationSec) {
-        throw new Error('Gateway video duration does not match the selected Flow model.');
-      }
+    if (item.gatewayJobId && model.source !== 'live') {
+      throw new Error('Live Flow model availability is unknown; Gateway video was not submitted.');
     }
+    const snapshot = snapshotVideoModel(model.key, [model], model.source, mode, item.durationSec);
     if (model.label !== item.videoModelLabel) {
       throw new Error('The selected Flow model changed. Refresh models and queue again.');
     }
+    if (item.videoModelBinding && ['modelKey', 'mode', 'durationSec', 'rpcId'].some((key) => item.videoModelBinding[key] !== snapshot.videoModelBinding[key])) {
+      throw new Error('The captured model and duration binding changed; review this queued video.');
+    }
+    item.videoModelBinding = snapshot.videoModelBinding;
+    await patchItem(item.id, { videoModelBinding: item.videoModelBinding });
   }
 
   if (mode === 'image' && !item.startMediaId) {
@@ -766,6 +767,8 @@ async function generateAndSave(item, settings, tab) {
       prompt: item.motionPrompt,
       mediaId: item.startMediaId,
       modelKey: item.videoModelKey,
+      durationSec: item.durationSec,
+      modelBinding: item.videoModelBinding,
       aspectRatio: item.aspectRatio,
     });
     if (typeof submitted?.mediaId !== 'string' || !submitted.mediaId.trim()) {
@@ -823,13 +826,7 @@ async function enqueueScenes(payload) {
   if (!projectId) throw new Error('Select a Flow project before queuing videos.');
   const mode = payload.videoMode === 'text' ? 'text' : 'image';
   const inventory = await refreshFlowModels();
-  const snapshot = snapshotVideoModel(payload.videoModelKey, inventory.models, inventory.source, mode);
-  const model = { key: snapshot.videoModelKey, label: snapshot.videoModelLabel };
-  const queueModel = {
-    videoModelKey: model.key,
-    videoModelLabel: model.label,
-    videoModelSource: snapshot.videoModelSource,
-  };
+  const queueModel = snapshotVideoModel(payload.videoModelKey, inventory.models, inventory.source, mode, payload.durationSec);
   const queue = await getQueue();
   const active = new Set(
     queue
@@ -852,7 +849,7 @@ async function enqueueScenes(payload) {
       label: `${payload.episodeCode} · ${scene.label || scene.id}`,
       motionPrompt: scene.motionPrompt || '',
       imagePrompt: scene.imagePrompt || '',
-      durationSec: scene.durationSec,
+      sceneDurationSec: scene.durationSec,
       projectId,
       ...queueModel,
       videoMode: mode,
@@ -894,13 +891,7 @@ async function enqueueStandalone(payload) {
   if (!prompts.length) throw new Error('Enter at least one video prompt before queuing.');
   const mode = payload?.videoMode === 'text' ? 'text' : 'image';
   const inventory = await refreshFlowModels();
-  const snapshot = snapshotVideoModel(payload.videoModelKey, inventory.models, inventory.source, mode);
-  const model = { key: snapshot.videoModelKey, label: snapshot.videoModelLabel };
-  const queueModel = {
-    videoModelKey: model.key,
-    videoModelLabel: model.label,
-    videoModelSource: snapshot.videoModelSource,
-  };
+  const queueModel = snapshotVideoModel(payload.videoModelKey, inventory.models, inventory.source, mode, payload.durationSec);
   const queue = await getQueue();
   let added = 0;
   let skipped = 0;
@@ -919,7 +910,6 @@ async function enqueueStandalone(payload) {
       label: prompts.length > 1 ? `Standalone video ${index + 1}/${prompts.length}` : 'Standalone video',
       motionPrompt: prompt,
       imagePrompt: prompt,
-      durationSec: 4,
       projectId,
       ...queueModel,
       videoMode: mode,

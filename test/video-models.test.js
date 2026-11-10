@@ -71,10 +71,12 @@ test('resolves exact selections per video source and refuses mismatches', () => 
 
 test('snapshots executable model metadata for the selected source', () => {
   const imageModel = defaultVideoModel('image');
-  assert.deepEqual(snapshotVideoModel(imageModel.key, FALLBACK_VIDEO_MODELS, 'fallback', 'image'), {
+  assert.deepEqual(snapshotVideoModel(imageModel.key, FALLBACK_VIDEO_MODELS, 'fallback', 'image', 3), {
     videoModelKey: imageModel.key,
     videoModelLabel: imageModel.label,
     videoModelSource: 'fallback',
+    durationSec: 3,
+    videoModelBinding: { modelKey: imageModel.key, mode: 'image', durationSec: 3, rpcId: 'MZZa6b' },
   });
   assert.throws(
     () => snapshotVideoModel(defaultVideoModel('text').key, FALLBACK_VIDEO_MODELS, 'fallback', 'image'),

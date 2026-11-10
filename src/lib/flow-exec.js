@@ -255,6 +255,13 @@ export async function flowCommand(command) {
       const mode = payload.mode === 'text' ? 'text' : 'image';
       const modelKey = String(payload.modelKey || '').trim();
       if (!EXACT_MODEL.test(modelKey)) throw new Error('Video submission needs an exact Flow model key.');
+      const binding = payload.modelBinding;
+      if (!Number.isSafeInteger(payload.durationSec) || payload.durationSec <= 0 ||
+          !binding || binding.modelKey !== modelKey || binding.mode !== mode ||
+          binding.durationSec !== payload.durationSec ||
+          binding.rpcId !== (mode === 'text' ? RPC.textToVideo : RPC.imageToVideo)) {
+        throw new Error('Video model and duration have no matching captured request binding; nothing was submitted.');
+      }
       const aspect = VIDEO_ASPECT[payload.aspectRatio || '16:9'];
       if (!aspect) {
         throw new Error(`Flow video aspect ratio ${payload.aspectRatio} is not verified on the current app yet — use 16:9.`);
@@ -322,7 +329,15 @@ export async function flowCommand(command) {
       } catch {
         // The panel needs a state result, not an exception, for signed-out tabs.
       }
-      return { entries: [], signedIn, projectId: currentProjectId() };
+      // A visible workspace summary is an observation, not a backend binding.
+      // Never turn UI labels or slider positions into provider keys.
+      const text = typeof document === 'undefined' ? '' : document.body?.innerText || '';
+      const summaries = [...text.matchAll(/Video\s*·\s*(\d+p)\s*·\s*(\d+)s\s+[^\n]*\s*x(\d+)\b/g)];
+      const summary = summaries.length === 1 ? summaries[0] : null;
+      const observedSelection = summary ? {
+        resolution: summary[1], durationSec: Number(summary[2]), outputCount: Number(summary[3]),
+      } : null;
+      return { entries: [], signedIn, projectId: currentProjectId(), observedSelection };
     };
 
     const getContext = async () => {

@@ -1,6 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { flowCommand } from '../src/lib/flow-exec.js';
+import { FALLBACK_VIDEO_MODELS, snapshotVideoModel } from '../src/lib/video-models.js';
+
+function selection(mode, durationSec) {
+  const model = FALLBACK_VIDEO_MODELS.find((entry) => entry.mode === mode && entry.durationSec === durationSec);
+  const snapshot = snapshotVideoModel(model.key, FALLBACK_VIDEO_MODELS, 'fallback', mode, durationSec);
+  return { modelKey: model.key, durationSec, modelBinding: snapshot.videoModelBinding };
+}
 
 const PROJECT = '5852b0c6-e4a4-455a-8215-5513c208c29d';
 
@@ -67,7 +74,7 @@ test('text-to-video submits the captured YhhmEf shape', async (t) => {
   t.after(() => mock.restore());
   const result = await flowCommand({
     op: 'submitVideo',
-    payload: { projectId: PROJECT, mode: 'text', prompt: 'Slow push in.', modelKey: 'veo_t2v', aspectRatio: '16:9' },
+    payload: { projectId: PROJECT, mode: 'text', prompt: 'Slow push in.', ...selection('text', 4), aspectRatio: '16:9' },
   });
   assert.equal(result.ok, true, result.error);
   assert.equal(result.result.mediaId, 'media-text');
@@ -77,7 +84,7 @@ test('text-to-video submits the captured YhhmEf shape', async (t) => {
   assert.equal(freq[0][0][0], 'YhhmEf');
   const args = JSON.parse(freq[0][0][1]);
   assert.deepEqual(args[0][0][0], [null, null, [[['Slow push in.']]]]);
-  assert.equal(args[0][0][1], 'veo_t2v');
+  assert.equal(args[0][0][1], selection('text', 4).modelKey);
   assert.equal(args[0][0][2], 2);
   assert.equal(args[0][0][3], null);
   assert.equal(args[0][0][4].length, 6);
@@ -92,14 +99,14 @@ test('image-to-video cites the start image and uses MZZa6b', async (t) => {
   t.after(() => mock.restore());
   const result = await flowCommand({
     op: 'submitVideo',
-    payload: { projectId: PROJECT, mode: 'image', prompt: 'Dolly in.', mediaId: 'start-image', modelKey: 'veo_i2v', aspectRatio: '16:9' },
+    payload: { projectId: PROJECT, mode: 'image', prompt: 'Dolly in.', mediaId: 'start-image', ...selection('image', 3), aspectRatio: '16:9' },
   });
   assert.equal(result.ok, true, result.error);
   assert.equal(result.result.mediaId, 'media-image');
   const args = JSON.parse(mock.requests[0].freq[0][0][1]);
   assert.equal(mock.requests[0].rpcId, 'MZZa6b');
   assert.deepEqual(args[0][0][1], [[null, 'start-image']]);
-  assert.equal(args[0][0][2], 'veo_i2v');
+  assert.equal(args[0][0][2], selection('image', 3).modelKey);
   assert.equal(args[0][0][3], 2);
 });
 
@@ -144,12 +151,58 @@ test('image generation keeps the verified ogiZ0b shape and media id', async (t) 
   assert.ok(result.result.base64.length > 0);
 });
 
+for (const [mode, durationSec] of [['text', 8], ['image', 10]]) {
+  test(`${mode} different captured duration reaches the exact RPC key`, async (t) => {
+    const rpcId = mode === 'text' ? 'YhhmEf' : 'MZZa6b';
+    const mock = install({ responses: { [rpcId]: submitResponse('duration-media') } });
+    t.after(() => mock.restore());
+    const choice = selection(mode, durationSec);
+    const result = await flowCommand({ op: 'submitVideo', payload: {
+      projectId: PROJECT, mode, prompt: 'Duration fixture.', mediaId: 'start-image', ...choice, aspectRatio: '16:9',
+    } });
+    assert.equal(result.ok, true, result.error);
+    const args = JSON.parse(mock.requests[0].freq[0][0][1]);
+    assert.equal(mock.requests[0].rpcId, rpcId);
+    assert.equal(args[0][0][mode === 'text' ? 1 : 2], choice.modelKey);
+  });
+}
+
+for (const patch of [{ durationSec: 6 }, { modelBinding: undefined }, { modelBinding: { ...selection('text', 4).modelBinding, rpcId: 'MZZa6b' } }]) {
+  test(`refuses unmatched selection at the actual provider boundary: ${JSON.stringify(patch)}`, async (t) => {
+    const mock = install();
+    t.after(() => mock.restore());
+    let tokens = 0;
+    window.grecaptcha.enterprise.execute = async () => { tokens++; return 'unused'; };
+    const result = await flowCommand({ op: 'submitVideo', payload: {
+      projectId: PROJECT, mode: 'text', prompt: 'Never submitted.', ...selection('text', 4), ...patch,
+    } });
+    assert.equal(result.ok, false);
+    assert.match(result.error, /matching captured request binding/);
+    assert.equal(mock.requests.length, 0);
+    assert.equal(tokens, 0);
+  });
+}
+
+test('visible UI length is observed without inventing request mappings or submitting', async (t) => {
+  const mock = install();
+  const original = globalThis.document;
+  t.after(() => { mock.restore(); globalThis.document = original; });
+  for (const durationSec of [3, 6, 10]) {
+    globalThis.document = { body: { innerText: `Video · 360p · ${durationSec}s\ncrop_16_9\nx1` } };
+    const result = await flowCommand({ op: 'listVideoModels' });
+    assert.equal(result.ok, true, result.error);
+    assert.deepEqual(result.result.entries, []);
+    assert.deepEqual(result.result.observedSelection, { resolution: '360p', durationSec, outputCount: 1 });
+  }
+  assert.equal(mock.requests.length, 0);
+});
+
 test('refuses unverified aspect ratios instead of guessing', async (t) => {
   const mock = install({ responses: { YhhmEf: submitResponse('never') } });
   t.after(() => mock.restore());
   const result = await flowCommand({
     op: 'submitVideo',
-    payload: { projectId: PROJECT, mode: 'text', prompt: 'x', modelKey: 'veo_t2v', aspectRatio: '9:16' },
+    payload: { projectId: PROJECT, mode: 'text', prompt: 'x', ...selection('text', 4), aspectRatio: '9:16' },
   });
   assert.equal(result.ok, false);
   assert.match(result.error, /not verified/);

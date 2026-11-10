@@ -62,9 +62,21 @@ The Flow address is a Settings field. If Google moves Flow again, paste the new
 address and grant site access there — no code change is needed.
 
 The current Flow app is driven through its own signed `batchexecute` endpoint.
-The tested catalog carries the captured Omni 1.2 Flash and Omni Flash models for
-both video sources; the length is part of the model key, so another duration is a
-different captured key.
+The fallback catalog records only captured Omni 1.2 Flash and Omni Flash request
+bindings for each video source and length. It is not live availability evidence.
+Choose a clip length in Provider settings; that choice persists with the model
+and every queue row. For Story scenes this is the generated clip length; the scene
+timeline length is retained separately. An unsupported combination is refused
+before any fresh-image or video submission. Neither labels nor key suffixes are
+used to invent another backend ID or duration binding.
+
+Refreshing can report the visible workspace's selected length, resolution and
+output count as UI observations. Those observations do not change your selection
+or authorize new lengths. The reported Omni 1.2 Flash 3–10s UI range still needs
+sanitized text/image request captures pairing each exact key and RPC payload with
+its selected duration, aspect, resolution and output count. Until those mappings
+and live availability are captured, the corresponding combinations remain
+unavailable, and Gateway keeps its existing live-inventory refusal.
 
 ## Install
 

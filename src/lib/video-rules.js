@@ -31,7 +31,7 @@ export function classifyInterruptedItem(item) {
   if (item.phase === 'image_submitting') return { status: 'ambiguous', phase: 'image_submitting', ambiguityKind: 'image', error: imageError };
   return { status: 'pending', phase: item.phase || 'queued' };
 }
-export function activeItemKey(item) { return [item.slug, item.episodeCode, item.sceneId, item.videoMode || 'image', item.videoModelKey, item.aspectRatio, item.videoSource, item.imageModel, item.motionPrompt, item.imagePrompt].map((value) => String(value || '').trim().toLowerCase()).join('::'); }
+export function activeItemKey(item) { return [item.slug, item.episodeCode, item.sceneId, item.videoMode || 'image', item.videoModelKey, item.durationSec, item.aspectRatio, item.videoSource, item.imageModel, item.motionPrompt, item.imagePrompt].map((value) => String(value || '').trim().toLowerCase()).join('::'); }
 export function hasActiveDuplicate(queue, item) { return queue.some((candidate) => ['pending', 'running'].includes(candidate.status) && activeItemKey(candidate) === activeItemKey(item)); }
 export function migrateStoredQueue(queue) {
   let changed = false;

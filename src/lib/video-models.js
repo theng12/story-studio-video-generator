@@ -1,14 +1,14 @@
 // Video model catalog for the current Google Flow app.
 //
 // Captured live 2026-11-09: text-to-video and image-to-video are separate RPCs.
-// The app exposes a model-family list (`yBhWQ`) but not the duration-specific
-// keys — the length is the key suffix (`..._4s`, `..._3s`) — so this tested
-// catalog is the source of truth and the worker fails closed on a stale pick.
+// These are captured request bindings, not a live capability inventory. Duration
+// is recorded from each capture, never inferred from a label or used to invent
+// another key. UI-only duration observations cannot authorize a request.
 export const FALLBACK_VIDEO_MODELS = Object.freeze([
-  { key: 'macaron_cookie_t2v_4s', label: 'Omni 1.2 Flash - 4 seconds', mode: 'text' },
-  { key: 'abra_t2v_8s', label: 'Omni Flash - 8 seconds', mode: 'text' },
-  { key: 'macaron_cookie_r2v_3s', label: 'Omni 1.2 Flash - 3 seconds', mode: 'image' },
-  { key: 'abra_r2v_10s', label: 'Omni Flash - 10 seconds', mode: 'image' },
+  { key: 'macaron_cookie_t2v_4s', label: 'Omni 1.2 Flash - 4 seconds', mode: 'text', durationSec: 4 },
+  { key: 'abra_t2v_8s', label: 'Omni Flash - 8 seconds', mode: 'text', durationSec: 8 },
+  { key: 'macaron_cookie_r2v_3s', label: 'Omni 1.2 Flash - 3 seconds', mode: 'image', durationSec: 3 },
+  { key: 'abra_r2v_10s', label: 'Omni Flash - 10 seconds', mode: 'image', durationSec: 10 },
 ]);
 
 const EXACT_KEY = /^[a-z0-9][a-z0-9_.-]{2,127}$/;
@@ -20,7 +20,9 @@ export function normalizeVideoInventory(entries) {
     const label = String(entry?.label || '').trim();
     if (!EXACT_KEY.test(key) || !label || label === key || seen.has(key)) return [];
     seen.add(key);
-    return [{ key, label, mode: entry?.mode === 'text' ? 'text' : 'image' }];
+    const duration = Number.isSafeInteger(entry?.durationSec) && entry.durationSec > 0
+      ? { durationSec: entry.durationSec } : {};
+    return [{ key, label, mode: entry?.mode === 'text' ? 'text' : 'image', ...duration }];
   });
 }
 
@@ -47,12 +49,25 @@ export function resolveVideoModel(key, models, mode = 'image') {
   return match;
 }
 
-export function snapshotVideoModel(key, models, source, mode = 'image') {
+export function snapshotVideoModel(key, models, source, mode = 'image', durationSec) {
   const model = resolveVideoModel(key, models, mode);
+  if (!Number.isSafeInteger(durationSec) || durationSec <= 0) {
+    throw new Error('Select a positive whole-second clip length before queueing.');
+  }
+  if (!model.durationSec || durationSec !== model.durationSec) {
+    throw new Error(`Video duration does not match a captured request for this model (${model.durationSec ? `${model.durationSec}s captured` : 'length unknown'}). The selected ${durationSec}s request is unavailable; nothing was submitted.`);
+  }
   return {
     videoModelKey: model.key,
     videoModelLabel: model.label,
     videoModelSource: source === 'live' ? 'live' : 'fallback',
+    durationSec,
+    videoModelBinding: {
+      modelKey: model.key,
+      mode,
+      durationSec,
+      rpcId: mode === 'text' ? 'YhhmEf' : 'MZZa6b',
+    },
   };
 }
 

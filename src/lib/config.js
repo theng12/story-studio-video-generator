@@ -18,6 +18,7 @@ export const DEFAULTS = {
   videoModelKey: DEFAULT_VIDEO_MODEL.key,
   videoModelLabel: DEFAULT_VIDEO_MODEL.label,
   videoModelSource: 'fallback',
+  videoDurationSec: DEFAULT_VIDEO_MODEL.durationSec,
   videoSource: 'existing',
   imageModel: 'nano-banana-2',
   aspectRatio: '16:9',
@@ -88,14 +89,10 @@ function normalize(settings) {
   if (!['image', 'text'].includes(settings.videoMode)) settings.videoMode = DEFAULTS.videoMode;
   if (!['existing', 'generate'].includes(settings.videoSource)) settings.videoSource = DEFAULTS.videoSource;
   if (!['16:9', '9:16'].includes(settings.aspectRatio)) settings.aspectRatio = DEFAULTS.aspectRatio;
-  // The two video sources use different model keys, so a stale selection must
-  // resolve to the current catalog instead of being sent to Flow.
-  const catalog = modelsForMode(FALLBACK_VIDEO_MODELS, settings.videoMode);
-  const selected = catalog.find((model) => model.key === settings.videoModelKey);
-  const chosen = selected || defaultVideoModel(settings.videoMode);
-  settings.videoModelKey = chosen.key;
-  settings.videoModelLabel = chosen.label;
-  if (!selected) settings.videoModelSource = 'fallback';
+  // Keep an unavailable selection visible; only a current request binding may
+  // authorize it later. Loading settings must never silently switch models.
+  const duration = Number(settings.videoDurationSec);
+  settings.videoDurationSec = Number.isSafeInteger(duration) && duration > 0 ? duration : null;
   settings.fleetEnabled = settings.fleetEnabled === true;
   settings.fleetHubUrl = String(settings.fleetHubUrl || DEFAULTS.fleetHubUrl).trim().replace(/\/$/, '');
   settings.fleetMachineName = String(settings.fleetMachineName || '').trim().slice(0, 80);
@@ -111,7 +108,13 @@ export async function getSettings() {
   if (JSON.stringify(upgraded) !== JSON.stringify(raw)) {
     await chrome.storage.sync.set({ [STORAGE_KEY]: upgraded });
   }
-  return normalize({ ...DEFAULTS, ...upgraded });
+  const settings = { ...DEFAULTS, ...upgraded };
+  if (!Object.hasOwn(upgraded, 'videoDurationSec')) {
+    const model = modelsForMode(FALLBACK_VIDEO_MODELS, settings.videoMode)
+      .find((entry) => entry.key === settings.videoModelKey);
+    settings.videoDurationSec = model?.durationSec ?? null;
+  }
+  return normalize(settings);
 }
 
 export async function saveSettings(patch) {

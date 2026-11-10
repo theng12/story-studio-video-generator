@@ -94,6 +94,10 @@
           <select id="videoModel"></select>
         </label>
         <div class="inventory-row"><span id="modelInventoryState" class="muted" aria-live="polite"></span><button id="refreshModels" class="small" type="button">Refresh models</button></div>
+        <label>Clip length (seconds)
+          <input id="videoDurationSec" type="number" min="1" step="1" required aria-describedby="videoDurationState" />
+        </label>
+        <p id="videoDurationState" class="muted" aria-live="polite"></p>
         <label>Video source
           <select id="videoMode">
             <option value="image">Start image → video</option>

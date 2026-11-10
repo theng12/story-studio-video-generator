@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.3 — 2026-11-10
+
+- Clip length stays with your model choice, saved settings and queued videos.
+- Unverified model and length combinations stop before using credits instead of generating a different length.
+- Model choices distinguish captured requests from live availability. Workspace observations do not silently change your selection.
+
 ## 1.3.2 — 2026-11-10
 
 - Finished Gateway videos stay saved until Gateway accepts them. Retrying delivery does not generate another video.

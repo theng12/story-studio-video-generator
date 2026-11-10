@@ -16,16 +16,37 @@ let elapsedStartedAt = 0;
 let latestLiveStatus = null;
 let activeCooldownUntil = 0;
 let modelInventorySource = 'fallback';
+let currentModels = FALLBACK_VIDEO_MODELS;
+
+function renderDurationState() {
+  const model = currentModels.find((entry) => entry.key === $('videoModel').value);
+  const durationSec = Number($('videoDurationSec').value);
+  const verified = model?.durationSec === durationSec;
+  $('videoDurationSec').setAttribute('aria-invalid', String(!verified));
+  $('videoDurationState').textContent = verified
+    ? `${durationSec}s per clip. This length has a captured request for this model.`
+    : `This length is unavailable for the selected model. ${model?.durationSec ? `Only ${model.durationSec}s has a captured request.` : 'No request length has been captured.'} Refresh models or choose a captured combination.`;
+}
 let storyLoadToken = 0;
 
 function renderModelInventory(inventory) {
   const mode = settings.videoMode === 'text' ? 'text' : 'image';
   const models = modelsForMode(inventory?.models, mode);
-  $('videoModel').replaceChildren(...models.map((model) => new Option(model.label, model.key)));
-  const selected = models.find((model) => model.key === settings.videoModelKey) || defaultVideoModel(mode);
-  $('videoModel').value = selected.key;
+  currentModels = models;
+  const options = models.map((model) => new Option(model.label, model.key));
+  if (!models.some((model) => model.key === settings.videoModelKey)) {
+    options.unshift(new Option(`${settings.videoModelLabel || 'Saved model'} · unavailable`, settings.videoModelKey));
+  }
+  $('videoModel').replaceChildren(...options);
+  $('videoModel').value = settings.videoModelKey;
+  $('videoDurationSec').value = settings.videoDurationSec ?? '';
   modelInventorySource = inventory?.source === 'live' ? 'live' : 'fallback';
-  $('modelInventoryState').textContent = modelInventorySource === 'live' ? 'Live from this Flow workspace' : 'Tested fallback catalog';
+  const observed = inventory?.observedSelection;
+  $('modelInventoryState').textContent = (modelInventorySource === 'live'
+    ? 'Live request mappings'
+    : 'Captured requests only; live model availability is unknown.') +
+    (observed ? ` Workspace shows ${observed.durationSec}s at ${observed.resolution}, x${observed.outputCount}; request mapping unverified.` : '');
+  renderDurationState();
 }
 
 async function refreshModels() {
@@ -40,6 +61,7 @@ function modelSnapshot() {
     videoModelKey: $('videoModel').value,
     videoModelLabel: option?.textContent || '',
     videoModelSource: modelInventorySource,
+    durationSec: Number($('videoDurationSec').value),
   };
 }
 
@@ -166,6 +188,7 @@ async function changeVideoMode() {
     videoModelKey: model.key,
     videoModelLabel: model.label,
     videoModelSource: 'fallback',
+    videoDurationSec: model.durationSec,
   });
   renderVideoMode();
   await refreshModels();
@@ -666,7 +689,7 @@ function renderQueue(queue, state, live) {
 
     const label = document.createElement('span');
     label.className = 'qlabel';
-    label.textContent = item.label + (item.savedAs ? ` → ${item.savedAs}` : '');
+    label.textContent = item.label + (item.durationSec ? ` · ${item.durationSec}s` : '') + (item.savedAs ? ` → ${item.savedAs}` : '');
     label.title = item.error ? publicMessage(item.error) : phaseLabel(item.phase);
 
     const status = document.createElement('span');
@@ -1001,8 +1024,21 @@ async function init() {
   });
 
   $('videoModel').addEventListener('change', async () => {
+    const model = currentModels.find((entry) => entry.key === $('videoModel').value);
+    $('videoDurationSec').value = model?.durationSec ?? '';
     const snapshot = modelSnapshot();
-    settings = await saveSettings(snapshot);
+    settings = await saveSettings({
+      videoModelKey: snapshot.videoModelKey,
+      videoModelLabel: snapshot.videoModelLabel,
+      videoModelSource: snapshot.videoModelSource,
+      videoDurationSec: snapshot.durationSec,
+    });
+    renderDurationState();
+  });
+  $('videoDurationSec').addEventListener('input', renderDurationState);
+  $('videoDurationSec').addEventListener('change', async () => {
+    settings = await saveSettings({ videoDurationSec: Number($('videoDurationSec').value) });
+    renderDurationState();
   });
   for (const field of ['videoSource', 'aspectRatio']) {
     $(field).addEventListener('change', async () => {
