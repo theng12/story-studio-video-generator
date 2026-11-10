@@ -1,9 +1,9 @@
 // Video model catalog for the current Google Flow app.
 //
-// Captured live 2026-11-09: text-to-video and image-to-video are separate RPCs.
-// These are captured request bindings, not a live capability inventory. Duration
-// is recorded from each capture, never inferred from a label or used to invent
-// another key. UI-only duration observations cannot authorize a request.
+// Historical references from the prior implementation, not current transport
+// evidence. Preserve their model/length selections without authorizing paid work.
+// Current executable mappings require live evidence; UI-only observations cannot
+// supply provider keys, payload fields or a request binding.
 export const FALLBACK_VIDEO_MODELS = Object.freeze([
   { key: 'macaron_cookie_t2v_4s', label: 'Omni 1.2 Flash - 4 seconds', mode: 'text', durationSec: 4 },
   { key: 'abra_t2v_8s', label: 'Omni Flash - 8 seconds', mode: 'text', durationSec: 8 },
@@ -67,6 +67,7 @@ export function snapshotVideoModel(key, models, source, mode = 'image', duration
       mode,
       durationSec,
       rpcId: mode === 'text' ? 'YhhmEf' : 'MZZa6b',
+      inventorySource: source === 'live' ? 'live' : 'fallback',
     },
   };
 }

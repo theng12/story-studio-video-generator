@@ -76,7 +76,7 @@ test('snapshots executable model metadata for the selected source', () => {
     videoModelLabel: imageModel.label,
     videoModelSource: 'fallback',
     durationSec: 3,
-    videoModelBinding: { modelKey: imageModel.key, mode: 'image', durationSec: 3, rpcId: 'MZZa6b' },
+    videoModelBinding: { modelKey: imageModel.key, mode: 'image', durationSec: 3, rpcId: 'MZZa6b', inventorySource: 'fallback' },
   });
   assert.throws(
     () => snapshotVideoModel(defaultVideoModel('text').key, FALLBACK_VIDEO_MODELS, 'fallback', 'image'),

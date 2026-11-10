@@ -5,7 +5,8 @@ import { FALLBACK_VIDEO_MODELS, snapshotVideoModel } from '../src/lib/video-mode
 
 function selection(mode, durationSec) {
   const model = FALLBACK_VIDEO_MODELS.find((entry) => entry.mode === mode && entry.durationSec === durationSec);
-  const snapshot = snapshotVideoModel(model.key, FALLBACK_VIDEO_MODELS, 'fallback', mode, durationSec);
+  // Synthetic current-inventory fixture; this is not evidence from live Flow.
+  const snapshot = snapshotVideoModel(model.key, FALLBACK_VIDEO_MODELS, 'live', mode, durationSec);
   return { modelKey: model.key, durationSec, modelBinding: snapshot.videoModelBinding };
 }
 
@@ -167,7 +168,7 @@ for (const [mode, durationSec] of [['text', 8], ['image', 10]]) {
   });
 }
 
-for (const patch of [{ durationSec: 6 }, { modelBinding: undefined }, { modelBinding: { ...selection('text', 4).modelBinding, rpcId: 'MZZa6b' } }]) {
+for (const patch of [{ durationSec: 6 }, { modelBinding: undefined }, { modelBinding: { ...selection('text', 4).modelBinding, rpcId: 'MZZa6b' } }, { modelBinding: { ...selection('text', 4).modelBinding, inventorySource: 'fallback' } }]) {
   test(`refuses unmatched selection at the actual provider boundary: ${JSON.stringify(patch)}`, async (t) => {
     const mock = install();
     t.after(() => mock.restore());

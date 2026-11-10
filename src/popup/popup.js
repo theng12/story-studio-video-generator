@@ -21,11 +21,13 @@ let currentModels = FALLBACK_VIDEO_MODELS;
 function renderDurationState() {
   const model = currentModels.find((entry) => entry.key === $('videoModel').value);
   const durationSec = Number($('videoDurationSec').value);
-  const verified = model?.durationSec === durationSec;
+  const verified = modelInventorySource === 'live' && model?.durationSec === durationSec;
   $('videoDurationSec').setAttribute('aria-invalid', String(!verified));
-  $('videoDurationState').textContent = verified
-    ? `${durationSec}s per clip. This length has a captured request for this model.`
-    : `This length is unavailable for the selected model. ${model?.durationSec ? `Only ${model.durationSec}s has a captured request.` : 'No request length has been captured.'} Refresh models or choose a captured combination.`;
+  $('videoDurationState').textContent = modelInventorySource !== 'live'
+    ? 'New generation is unavailable: the current request mapping is unverified. Your model and length stay saved.'
+    : verified
+      ? `${durationSec}s per clip. This length has a current request mapping for this model.`
+      : `This length is unavailable for the selected model. ${model?.durationSec ? `Only ${model.durationSec}s has a request mapping.` : 'No request length has been captured.'} Refresh models or choose a verified combination.`;
 }
 let storyLoadToken = 0;
 
@@ -44,7 +46,7 @@ function renderModelInventory(inventory) {
   const observed = inventory?.observedSelection;
   $('modelInventoryState').textContent = (modelInventorySource === 'live'
     ? 'Live request mappings'
-    : 'Captured requests only; live model availability is unknown.') +
+    : 'Historical selections only; live model availability is unknown.') +
     (observed ? ` Workspace shows ${observed.durationSec}s at ${observed.resolution}, x${observed.outputCount}; request mapping unverified.` : '');
   renderDurationState();
 }

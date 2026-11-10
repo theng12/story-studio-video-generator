@@ -15,7 +15,7 @@ for (const mode of ['text', 'image']) {
       assert.equal(snapshot.durationSec, model.durationSec);
       assert.deepEqual(snapshot.videoModelBinding, {
         modelKey: model.key, mode, durationSec: model.durationSec,
-        rpcId: mode === 'text' ? 'YhhmEf' : 'MZZa6b',
+        rpcId: mode === 'text' ? 'YhhmEf' : 'MZZa6b', inventorySource: 'fallback',
       });
       assert.throws(() => snapshotVideoModel(model.key, models, 'fallback', mode, 6), /unavailable/);
       assert.throws(() => snapshotVideoModel(model.key, models, 'fallback', mode), /clip length/);

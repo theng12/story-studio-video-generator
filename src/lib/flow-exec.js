@@ -1,7 +1,8 @@
 // One-shot Google Flow MAIN-world command.
 //
-// Contract captured live 2026-11-09 on flow.google.com: every call is a
-// same-origin, cookie-authenticated POST to
+// Historical positional contract retained from the prior implementation.
+// It is not current video transport evidence; new video calls require a live
+// inventory binding. The prior same-origin, cookie-authenticated POST uses
 // /_/AiSandboxAngularFrontend/data/batchexecute carrying one RPC id, a
 // positional-array payload in f.req, and the page's anti-forgery token.
 // Text-to-video and image-to-video are separate RPCs with separate model keys.
@@ -257,7 +258,7 @@ export async function flowCommand(command) {
       if (!EXACT_MODEL.test(modelKey)) throw new Error('Video submission needs an exact Flow model key.');
       const binding = payload.modelBinding;
       if (!Number.isSafeInteger(payload.durationSec) || payload.durationSec <= 0 ||
-          !binding || binding.modelKey !== modelKey || binding.mode !== mode ||
+          !binding || binding.inventorySource !== 'live' || binding.modelKey !== modelKey || binding.mode !== mode ||
           binding.durationSec !== payload.durationSec ||
           binding.rpcId !== (mode === 'text' ? RPC.textToVideo : RPC.imageToVideo)) {
         throw new Error('Video model and duration have no matching captured request binding; nothing was submitted.');

@@ -696,8 +696,8 @@ async function generateAndSave(item, settings, tab) {
 
   if (!item.videoMediaId) {
     const model = await requireCurrentModel(item.videoModelKey, tab, mode);
-    if (item.gatewayJobId && model.source !== 'live') {
-      throw new Error('Live Flow model availability is unknown; Gateway video was not submitted.');
+    if (model.source !== 'live') {
+      throw new Error('Live Flow model availability is unknown; the current model and duration request mapping is unverified. No image or video was submitted.');
     }
     const snapshot = snapshotVideoModel(model.key, [model], model.source, mode, item.durationSec);
     if (model.label !== item.videoModelLabel) {

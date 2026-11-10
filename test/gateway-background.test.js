@@ -365,6 +365,25 @@ test('Story explicit clip length is bound separately from scene timeline length'
   } finally { worker.restore(); }
 });
 
+for (const mode of ['studio', 'standalone']) {
+  test(`${mode} historical fallback cannot authorize new image or video work`, async () => {
+    const model = FALLBACK_VIDEO_MODELS.find((entry) => entry.mode === 'image');
+    const row = { id: 'historical', status: 'pending', phase: 'queued', videoMode: 'image',
+      videoModelKey: model.key, videoModelLabel: model.label, durationSec: model.durationSec,
+      videoSource: 'generate', projectId: PROJECT, motionPrompt: 'Never submit historical transport.' };
+    const worker = await boot({ mode, local: { videoQueue: [row] },
+      flowReplies: { listVideoModels: { entries: [], signedIn: true, projectId: PROJECT } },
+    });
+    try {
+      await waitFor(() => queueItem(worker)?.status === 'failed'); await worker.settled();
+      assert.match(queueItem(worker).error, /current model and duration request mapping is unverified/);
+      assert.equal(queueItem(worker).durationSec, model.durationSec);
+      assert.equal(queueItem(worker).videoModelKey, model.key);
+      assert.equal(worker.provider.filter(({ op }) => ['submitVideo', 'generateImage', 'uploadImage'].includes(op)).length, 0);
+    } finally { worker.restore(); }
+  });
+}
+
 test('unverified Standalone duration is refused before queueing or fresh-image generation', async () => {
   const model = FALLBACK_VIDEO_MODELS.find((entry) => entry.mode === 'image');
   const worker = await boot({ mode: 'standalone' });

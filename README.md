@@ -62,8 +62,12 @@ The Flow address is a Settings field. If Google moves Flow again, paste the new
 address and grant site access there — no code change is needed.
 
 The current Flow app is driven through its own signed `batchexecute` endpoint.
-The fallback catalog records only captured Omni 1.2 Flash and Omni Flash request
-bindings for each video source and length. It is not live availability evidence.
+The fallback catalog preserves historical Omni 1.2 Flash and Omni Flash model and
+length references from the prior implementation. These are not evidence of the
+current video transport or live availability. Every mode refuses new image/video
+work until a current video request mapping is verified; historical references
+preserve selections only. Known video IDs and retained Gateway bytes still use
+their existing recovery/delivery paths without generating again.
 Choose a clip length in Provider settings; that choice persists with the model
 and every queue row. For Story scenes this is the generated clip length; the scene
 timeline length is retained separately. An unsupported combination is refused
