@@ -36,8 +36,13 @@ panel. Preserve Story Studio clip ingestion and Downloads naming.
   held; retained media/results must never be regenerated for delivery retry.
 - Keep image/video account identity and observed credits scoped to one verified
   account/profile, never one balance per extension. Configured labels are not
-  readiness or credit evidence. Account-wide claim/pacing coordination needs an
-  agreed manager/Gateway contract; local storage is not shared across extensions.
+  readiness or credit evidence. Follow Gateway account-worker schema 1: report
+  unbound telemetry without account identity until actually observed; never execute
+  quoteRequired previews. Quoted claims carry same-request observed account facts,
+  and actual generation rechecks its reservation/account. Echo control revisions
+  only after persisted dispatch/pacing readback; keep OFF/cooldown/unknown holds
+  across restart. Closing safety belongs to Gateway; never kill a browser or
+  release a hold because closeRequested is set.
 - Verify default inter-generation 5–15s pacing, saved custom/zero overrides, MV3
   restart deadlines, fresh-image-to-video gaps, eligibility before claims, manual
   cooldown holds and unknown-paid-outcome refusal with offline platform fixtures.

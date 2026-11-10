@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.3.5 — 2026-11-11
+
+- Manager pauses and pacing stay saved after restart. Resume and close acknowledgements reflect the settings actually applied.
+- Account readiness and credits remain unknown until observed from the provider; a configured profile label never authorizes spending.
+- A job preview cannot generate a video. Paid work needs an exact observed quote and matching account reservation.
+- Checking status during active generation keeps that work active; uncertain work stays held for review.
+
 ## 1.3.4 — 2026-11-11
 
 - New settings use a random 5–15-second pause between generations, with no first-job delay. Existing custom pauses, including zero, stay saved.

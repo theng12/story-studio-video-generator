@@ -6,6 +6,7 @@ import {
   reportGatewayFailure,
   reportGatewayProgress,
   reportGatewayResult,
+  reportGatewayTelemetry,
   testGateway,
 } from '../src/lib/gateway-client.js';
 
@@ -130,7 +131,7 @@ test('claim accepts 204 and a job, and throws for any other receipt', async () =
     assert.deepEqual(JSON.parse(calls[0].init.body), { workerId: 'worker_1', kind: 'video' });
   });
   await withFetch(jsonResponse({ job: { jobId: 'job_1', kind: 'video' } }), async () => {
-    assert.deepEqual(await claimGatewayJob(SETTINGS), { jobId: 'job_1', kind: 'video' });
+    assert.deepEqual(await claimGatewayJob(SETTINGS), { job: { jobId: 'job_1', kind: 'video' } });
   });
   // A claimed job may already have spent credits: an unusable receipt must throw, never be dropped.
   for (const body of ['not json', '', '{}', '{"job":null}', '{"job":{}}', '{"job":{"jobId":" "}}', '{"jobId":"job_1"}', '[]']) {
@@ -139,6 +140,27 @@ test('claim accepts 204 and a job, and throws for any other receipt', async () =
     });
   }
   await assert.rejects(() => claimGatewayJob({ ...SETTINGS, gatewayWorkerId: '' }), /worker id is not set/);
+});
+
+test('quote preview is returned as unclaimed metadata, with control preserved', async () => {
+  const preview = { job: null, quoteRequired: { job: { jobId: 'preview-only' }, payloadSha256: 'd'.repeat(64), executionAuthorized: false }, control: { revision: 'r1' } };
+  await withFetch(jsonResponse(preview), async () => assert.deepEqual(await claimGatewayJob(SETTINGS), preview));
+  await withFetch(jsonResponse({ ...preview, quoteRequired: { ...preview.quoteRequired, executionAuthorized: true } }), async () => {
+    await assert.rejects(() => claimGatewayJob(SETTINGS), /malformed/);
+  });
+});
+
+test('telemetry uses worker auth and preserves exact control acknowledgement and observations', async () => {
+  const observation = { telemetry: { state: { paused: true, controlRevision: 'actually-applied' } } };
+  const result = { ok: true, receivedAt: 123, control: { revision: 'next-control' } };
+  await withFetch(jsonResponse(result), async (calls) => {
+    assert.deepEqual(await reportGatewayTelemetry(SETTINGS, observation), result);
+    assert.deepEqual(JSON.parse(calls[0].init.body), { workerId: 'worker_1', kind: 'video', ...observation });
+    assert.equal(calls[0].init.headers.Authorization, `Bearer ${TOKEN}`);
+  });
+  await withFetch(jsonResponse({ ok: false }), async () => {
+    await assert.rejects(() => reportGatewayTelemetry(SETTINGS, observation), /not acknowledged/);
+  });
 });
 
 test('progress, result and fail need ok true and not ignored', async () => {

@@ -3,6 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { setTimeout as pause } from 'node:timers/promises';
 import { FALLBACK_VIDEO_MODELS } from '../src/lib/video-models.js';
+import { gatewayBinding } from '../src/lib/gateway-client.js';
 
 const PROJECT = '5852b0c6-e4a4-455a-8215-5513c208c29d';
 const MODEL = FALLBACK_VIDEO_MODELS.find((model) => model.key === 'abra_t2v_8s');
@@ -35,13 +36,18 @@ async function waitFor(predicate) {
   for (let n = 0; n < 400; n++) { if (predicate()) return; await pause(5); }
   throw new Error('Video background fixture timed out.');
 }
-async function boot({ local = {}, sync, rows = new Map(), mode = 'gateway', job = JOB, answers = [{ ok: true }], health = {}, failAnswer = { ok: true }, onClaim, onFlow, lostClaim = false, noTabs = false, storySave, assetReply, onTabs, flowReplies = {} } = {}) {
+async function boot({ local = {}, sync, rows = new Map(), mode = 'gateway', job = JOB, answers = [{ ok: true }], health = {}, failAnswer = { ok: true }, onClaim, onFlow, onTelemetry, claimReply, lostClaim = false, noTabs = false, storySave, assetReply, onTabs, flowReplies = {} } = {}) {
   sync ||= { videoSettings: { mode, gatewayUrl: 'http://127.0.0.1:49873', gatewayWorkerId: '', flowProjectId: PROJECT, humanDelayMinSec: 0, humanDelayMaxSec: 0, fleetEnabled: false } };
   local.gatewayWorkerToken ??= 'fixture-token';
   const desiredMode = sync.videoSettings.mode;
   sync.videoSettings.mode = 'studio';
   const prior = Object.fromEntries(['chrome', 'fetch', 'indexedDB'].map((key) => [key, globalThis[key]]));
   const calls = [], provider = [], downloads = [], alarms = [], scheduled = [];
+  const control = Object.hasOwn(health, 'control') ? health.control : { revision: 'fixture-control', dispatchEnabled: true, closeRequested: false,
+    pacing: { minSeconds: sync.videoSettings.humanDelayMinSec ?? 5, maxSeconds: sync.videoSettings.humanDelayMaxSec ?? 15 } };
+  const account = () => ({ schema: 1, provider: 'flow', accountId: 'provider-observed-fixture', source: 'flow.account', observedAt: new Date(Date.now()).toISOString(),
+    connection: 'connected', signIn: 'signed_in', readiness: 'ready',
+    balance: { value: 10, unit: 'credits', source: 'flow.balance', observedAt: new Date(Date.now()).toISOString() } });
   let listener;
   globalThis.indexedDB = indexedStorage(rows);
   globalThis.chrome = {
@@ -55,6 +61,8 @@ async function boot({ local = {}, sync, rows = new Map(), mode = 'gateway', job 
       await onFlow?.(op, local, payload);
       const result = flowReplies[op] || {
         listVideoModels: { entries: FALLBACK_VIDEO_MODELS, signedIn: true, projectId: PROJECT },
+        inspectAccount: { account: account(), quote: payload.preview ? { provider: 'flow', accountId: 'provider-observed-fixture',
+          payloadSha256: payload.preview.payloadSha256, value: 1, unit: 'credits', source: 'flow.quote', observedAt: new Date(Date.now()).toISOString() } : null },
         uploadImage: { mediaId: 'start-media' },
         generateImage: { mediaId: 'start-media' },
         submitVideo: { mediaId: 'video-media' },
@@ -75,11 +83,18 @@ async function boot({ local = {}, sync, rows = new Map(), mode = 'gateway', job 
       return Response.json({ saved_as: 'fixture.mp4' });
     }
     assert.equal(new URL(url).origin, 'http://127.0.0.1:49873', 'No real network is permitted.');
-    if (url.endsWith('/health')) return Response.json({ ok: true, workerId: 'fixture-worker', kind: 'video', maxResultBytes: 1024, leaseSeconds: 90, ...health });
+    if (url.endsWith('/health')) return Response.json({ ok: true, workerId: 'fixture-worker', kind: 'video', maxResultBytes: 1024, leaseSeconds: 90, accountMaxAgeSeconds: 90, control, ...health });
+    if (url.endsWith('/telemetry')) { await onTelemetry?.(local, sync); return Response.json({ ok: true, receivedAt: Date.now() / 1000, control }); }
     if (url.endsWith('/claim')) {
-      await onClaim?.(local, sync);
+      const body = JSON.parse(init.body);
+      if (body.quote || lostClaim) await onClaim?.(local, sync);
       if (lostClaim) throw new Error('Fixture lost claim response.');
-      return job ? Response.json({ job }) : new Response(null, { status: 204 });
+      const custom = claimReply?.(body, control);
+      if (custom) return Response.json(custom);
+      if (!job) return new Response(null, { status: 204 });
+      if (!body.quote) return Response.json({ job: null, quoteRequired: { job, payloadSha256: 'a'.repeat(64), executionAuthorized: false }, control });
+      return Response.json({ job, accountBinding: { provider: body.account.provider, accountId: body.account.accountId },
+        reservation: { payloadSha256: body.quote.payloadSha256, value: body.quote.value, unit: body.quote.unit }, control });
     }
     if (url.endsWith('/result')) {
       call.bytes = Buffer.from(await init.body.get('file').arrayBuffer());
@@ -93,7 +108,7 @@ async function boot({ local = {}, sync, rows = new Map(), mode = 'gateway', job 
   await import(`../src/background.js?video-runtime=${Date.now()}-${Math.random()}`);
   await pause(25);
   sync.videoSettings.mode = desiredMode;
-  return { local, sync, rows, calls, provider, downloads, scheduled,
+  return { local, sync, rows, calls, provider, downloads, scheduled, control, account,
     send(message) { return new Promise((resolve) => listener(message, {}, resolve)); },
     tick(name = 'gatewayWorkerTick') { for (const alarm of alarms) alarm({ name }); },
     async settled() { await pause(30); },
@@ -162,7 +177,7 @@ test('serial claims adopt authenticated worker id and busy queue admits one job'
     worker.sync.videoSettings.gatewayWorkerId = 'obsolete-random-id';
     await Promise.all([worker.send({ type: 'gatewayClaimNow' }), worker.send({ type: 'gatewayClaimNow' })]);
     await waitFor(() => queueItem(worker)?.status === 'done'); await worker.settled();
-    assert.equal(count(worker, '/claim'), 1); assert.equal(generated(worker), 1);
+    assert.equal(count(worker, '/claim'), 2); assert.equal(generated(worker), 1);
     const body = JSON.parse(worker.calls.find(({ url }) => url.endsWith('/claim')).init.body);
     assert.equal(body.workerId, 'fixture-worker');
   } finally { worker.restore(); }
@@ -178,7 +193,11 @@ test('mode change during preflight refuses the claim', async () => {
 
 test('paused queue never claims', async () => {
   const worker = await boot({ local: { videoQueuePaused: true } });
-  try { await worker.send({ type: 'gatewayClaimNow' }); assert.equal(worker.calls.length, 0); }
+  try {
+    await worker.send({ type: 'gatewayClaimNow' });
+    assert.equal(count(worker, '/claim'), 0);
+    assert.equal(JSON.parse(worker.calls.find(({ url }) => url.endsWith('/telemetry')).init.body).telemetry.state.paused, true);
+  }
   finally { worker.restore(); }
 });
 
@@ -187,7 +206,7 @@ test('explicit empty claim clears only the idle receipt and performs no provider
   try {
     await worker.send({ type: 'gatewayClaimNow' });
     assert.equal(count(worker, '/claim'), 1); assert.equal(worker.local.gatewayUnsettledClaim, undefined);
-    assert.equal(worker.provider.length, 0);
+    assert.ok(worker.provider.every(({ op }) => op === 'inspectAccount'));
   } finally { worker.restore(); }
 });
 
@@ -207,7 +226,7 @@ test('duplicate completed row cannot clear a new claim hold or replay generation
     assert.equal(reply.ok, false); assert.match(reply.error, /already recorded/);
     assert.ok(worker.local.gatewayUnsettledClaim?.claimId);
     assert.equal(generated(worker), 0);
-    worker.tick(); await worker.settled(); assert.equal(count(worker, '/claim'), 1);
+    worker.tick(); await worker.settled(); assert.equal(count(worker, '/claim'), 2);
   } finally { worker.restore(); }
 });
 
@@ -321,8 +340,10 @@ test('image-to-video reference remains until accepted delivery and is never repl
 test('token change while claim is in flight prevents provider work', async () => {
   const worker = await boot({ onClaim(local) { local.gatewayWorkerToken = 'changed-token'; } });
   try {
-    await worker.send({ type: 'gatewayClaimNow' }); await waitFor(() => queueItem(worker)?.status === 'failed'); await worker.settled();
-    assert.equal(worker.provider.length, 0); assert.equal(count(worker, '/fail'), 0); assert.ok(worker.local.gatewayUnsettledClaim);
+    const response = await worker.send({ type: 'gatewayClaimNow' }); await worker.settled();
+    assert.equal(response.ok, false); assert.match(response.error, /control was not applied/);
+    assert.equal(worker.local.videoQueue?.length || 0, 0);
+    assert.ok(worker.provider.every(({ op }) => op === 'inspectAccount')); assert.equal(count(worker, '/fail'), 0); assert.ok(worker.local.gatewayUnsettledClaim);
   } finally { worker.restore(); }
 });
 
@@ -578,7 +599,7 @@ test('Gateway waits before claim, rechecks a changed deadline after preflight, a
     clock.advanceTo(worker.local.nextVideoProviderRunAt);
     await Promise.all([worker.send({ type: 'gatewayClaimNow' }), worker.send({ type: 'gatewayClaimNow' })]);
     await waitFor(() => queueItem(worker)?.status === 'done'); await worker.settled();
-    assert.equal(count(worker, '/claim'), 1); assert.equal(generated(worker), 1);
+    assert.equal(count(worker, '/claim'), 2); assert.equal(generated(worker), 1);
   } finally { worker.restore(); }
 });
 
@@ -599,7 +620,7 @@ for (const autoResume of [false, true]) {
       } else {
         clock.advanceTo(until); worker.tick();
         await waitFor(() => queueItem(worker)?.status === 'done'); await worker.settled();
-        assert.equal(count(worker, '/claim'), 1);
+        assert.equal(count(worker, '/claim'), 2);
       }
     } finally { worker.restore(); }
   });
@@ -620,7 +641,7 @@ test('unknown paid outcome keeps claim and queue held despite elapsed pacing', a
     clock.advanceTo(worker.local.nextVideoProviderRunAt + 60000);
     worker.tick('videoQueueTick'); await worker.settled();
     await worker.send({ type: 'gatewayClaimNow' });
-    assert.equal(count(worker, '/claim'), 1); assert.equal(generated(worker), 1);
+    assert.equal(count(worker, '/claim'), 2); assert.equal(generated(worker), 1);
   } finally { worker.restore(); }
 });
 
@@ -636,7 +657,7 @@ test('eligibility changed while claiming holds ownership for review without a de
     assert.equal(generated(worker), 0);
     clock.advanceTo(worker.local.nextVideoProviderRunAt);
     worker.tick('videoQueueTick'); await worker.settled();
-    assert.equal(count(worker, '/claim'), 1); assert.equal(generated(worker), 0);
+    assert.equal(count(worker, '/claim'), 2); assert.equal(generated(worker), 0);
   } finally { worker.restore(); }
 });
 
@@ -711,6 +732,197 @@ test('fresh-image reply without a media id stays held and never submits its vide
     assert.equal(worker.local.videoQueuePaused, true);
     assert.equal(generated(worker), 0);
     assert.equal(worker.provider.filter(({ op }) => op === 'generateImage').length, 1);
+  } finally { worker.restore(); }
+});
+
+const lastTelemetry = (worker) => JSON.parse(worker.calls.filter(({ url }) => url.endsWith('/telemetry')).at(-1).init.body);
+
+test('unbound provider reports state independently and never treats a profile label as account proof', async () => {
+  const worker = await boot({ sync: pacedSync('gateway', { providerAccountProfileId: 'configured-only' }),
+    flowReplies: { inspectAccount: { account: null, quote: null } } });
+  try {
+    await worker.send({ type: 'gatewayClaimNow' });
+    const report = lastTelemetry(worker);
+    assert.equal(Object.hasOwn(report, 'account'), false);
+    assert.equal(report.telemetry.state.signIn, 'unknown');
+    assert.equal(report.telemetry.state.readiness, 'unknown');
+    assert.ok(!JSON.stringify(report).includes('configured-only'));
+    assert.equal(count(worker, '/claim'), 0); assert.equal(generated(worker), 0);
+    assert.equal(worker.local.gatewayUnsettledClaim, undefined);
+  } finally { worker.restore(); }
+});
+
+test('missing manager control stays OFF without a revision acknowledgement', async () => {
+  const worker = await boot({ health: { control: null } });
+  try {
+    await worker.send({ type: 'gatewayClaimNow' });
+    assert.equal(lastTelemetry(worker).telemetry.state.paused, true);
+    assert.equal(lastTelemetry(worker).telemetry.state.controlRevision, null);
+    assert.equal(worker.local.gatewayAppliedControl.dispatchEnabled, false);
+    assert.equal(count(worker, '/claim'), 0); assert.equal(worker.provider.length, 0);
+  } finally { worker.restore(); }
+});
+
+test('unclaimed preview without an exact quote never becomes queued or generated work', async () => {
+  const replies = {};
+  const worker = await boot({ flowReplies: replies, onFlow(op, _local, payload) {
+    if (op === 'inspectAccount' && payload.preview) replies.inspectAccount = { account: worker.account(), quote: null };
+  } });
+  try {
+    await worker.send({ type: 'gatewayClaimNow' });
+    assert.equal(count(worker, '/claim'), 1);
+    assert.equal(worker.local.videoQueue?.length || 0, 0);
+    assert.equal(worker.local.gatewayUnsettledClaim, undefined);
+    assert.equal(generated(worker), 0);
+    assert.ok(worker.provider.every(({ op }) => op === 'inspectAccount'));
+  } finally { worker.restore(); }
+});
+
+test('quoted executable claim carries same-request observed account and applied revision', async () => {
+  const worker = await boot();
+  try {
+    await worker.send({ type: 'gatewayClaimNow' });
+    await waitFor(() => queueItem(worker)?.status === 'done'); await worker.settled();
+    const bodies = worker.calls.filter(({ url }) => url.endsWith('/claim')).map(({ init }) => JSON.parse(init.body));
+    assert.equal(bodies.length, 2);
+    assert.equal(bodies[0].quote, undefined);
+    assert.equal(bodies[1].account.provider, bodies[1].quote.provider);
+    assert.equal(bodies[1].account.accountId, bodies[1].quote.accountId);
+    assert.equal(bodies[1].telemetry.state.controlRevision, worker.control.revision);
+    assert.equal(bodies[1].telemetry.state.paused, false);
+    assert.ok(Date.parse(bodies[1].telemetry.state.nextEligibleAt) <= Date.now());
+    assert.equal(generated(worker), 1);
+  } finally { worker.restore(); }
+});
+
+test('stop acknowledgement reports active generation, then safe idle state without killing or replaying work', async () => {
+  let release;
+  const blocked = new Promise((resolve) => { release = resolve; });
+  const worker = await boot({ onFlow: async (op) => { if (op === 'submitVideo') await blocked; } });
+  try {
+    await worker.send({ type: 'gatewayClaimNow' });
+    await waitFor(() => generated(worker) === 1);
+    Object.assign(worker.control, { revision: 'stop-revision', dispatchEnabled: false, closeRequested: true });
+    await worker.send({ type: 'gatewayClaimNow' });
+    let state = lastTelemetry(worker).telemetry.state;
+    assert.equal(state.controlRevision, 'stop-revision'); assert.equal(state.paused, true);
+    assert.equal(state.activity, 'generating'); assert.equal(state.nextEligibleAt, null);
+    assert.ok(worker.local.gatewayUnsettledClaim);
+    release(); await waitFor(() => queueItem(worker)?.status === 'done'); await worker.settled();
+    await worker.send({ type: 'gatewayClaimNow' });
+    state = lastTelemetry(worker).telemetry.state;
+    assert.equal(state.activity, 'idle'); assert.equal(state.paused, true);
+    assert.equal(state.controlRevision, 'stop-revision');
+    assert.equal(count(worker, '/claim'), 2); assert.equal(generated(worker), 1);
+  } finally { release(); worker.restore(); }
+});
+
+test('persistent manager OFF survives restart and local resume cannot override it', async () => {
+  let worker = await boot({ health: { control: { revision: 'off-revision', dispatchEnabled: false, closeRequested: true, pacing: { minSeconds: 0, maxSeconds: 0 } } } });
+  try {
+    await worker.send({ type: 'gatewayClaimNow' });
+    const saved = { local: worker.local, sync: worker.sync, health: { control: worker.control } };
+    saved.local.videoQueue = [pacedRow('remain-pending')];
+    worker.restore(); worker = await boot(saved);
+    await worker.send({ type: 'resumeQueue' }); await worker.settled();
+    await worker.send({ type: 'gatewayClaimNow' });
+    assert.equal(generated(worker), 0); assert.equal(count(worker, '/claim'), 0);
+    assert.equal(queueItem(worker).status, 'pending');
+    assert.equal(lastTelemetry(worker).telemetry.state.paused, true);
+    assert.equal(lastTelemetry(worker).telemetry.state.controlRevision, 'off-revision');
+  } finally { worker.restore(); }
+});
+
+test('initial manager default preserves custom zero and withholds ack until desired pacing matches', async () => {
+  const worker = await boot({ job: null, health: { control: { revision: 'default-revision', dispatchEnabled: true, closeRequested: false,
+    pacing: { minSeconds: 5, maxSeconds: 15 } } } });
+  try {
+    await worker.send({ type: 'gatewayClaimNow' });
+    assert.equal(worker.sync.videoSettings.humanDelayMaxSec, 0);
+    assert.equal(lastTelemetry(worker).telemetry.state.controlRevision, null);
+    assert.equal(lastTelemetry(worker).telemetry.state.paused, true);
+    assert.equal(count(worker, '/claim'), 0);
+    Object.assign(worker.control, { revision: 'explicit-zero', pacing: { minSeconds: 0, maxSeconds: 0 } });
+    await worker.send({ type: 'gatewayClaimNow' });
+    assert.equal(lastTelemetry(worker).telemetry.state.controlRevision, 'explicit-zero');
+    assert.deepEqual(lastTelemetry(worker).telemetry.state.pacing, { minSeconds: 0, maxSeconds: 0 });
+  } finally { worker.restore(); }
+});
+
+test('failed pacing write never acknowledges resume or clears persisted OFF', async () => {
+  const worker = await boot({ job: null });
+  try {
+    await worker.send({ type: 'gatewayClaimNow' });
+    Object.assign(worker.control, { revision: 'unapplied-pacing', pacing: { minSeconds: 2, maxSeconds: 3 } });
+    globalThis.chrome.storage.sync.set = async () => { throw new Error('Fixture settings write failed.'); };
+    const response = await worker.send({ type: 'gatewayClaimNow' });
+    assert.equal(response.ok, false);
+    assert.equal(worker.local.gatewayAppliedControl.dispatchEnabled, false);
+    assert.equal(worker.local.gatewayAppliedControl.revision, null);
+    assert.notEqual(lastTelemetry(worker).telemetry.state.controlRevision, 'unapplied-pacing');
+  } finally { worker.restore(); }
+});
+
+test('provider account change after reservation refuses actual generation', async () => {
+  const replies = {}; let inspections = 0;
+  const worker = await boot({ flowReplies: replies, onFlow(op) {
+    if (op === 'inspectAccount' && ++inspections === 3) replies.inspectAccount = { account: { ...worker.account(), accountId: 'different-provider-account' } };
+  } });
+  try {
+    await worker.send({ type: 'gatewayClaimNow' });
+    await waitFor(() => queueItem(worker)?.status === 'failed'); await worker.settled();
+    assert.equal(generated(worker), 0);
+    assert.match(queueItem(worker).error, /actual provider account no longer matches/);
+  } finally { worker.restore(); }
+});
+
+test('an executable reply to an unquoted request remains held and cannot generate', async () => {
+  const worker = await boot({ claimReply(_body, control) { return { job: JOB, control }; } });
+  try {
+    const response = await worker.send({ type: 'gatewayClaimNow' });
+    assert.equal(response.ok, false); assert.match(response.error, /without an observed quote/);
+    assert.ok(worker.local.gatewayUnsettledClaim);
+    assert.equal(worker.local.videoQueue?.length || 0, 0);
+    assert.equal(generated(worker), 0);
+  } finally { worker.restore(); }
+});
+
+test('legacy queued claim without a quote reservation cannot start generation', async () => {
+  const worker = await boot({ job: null });
+  try {
+    await worker.send({ type: 'gatewayTest' });
+    const binding = await gatewayBinding({ ...worker.sync.videoSettings, gatewayToken: worker.local.gatewayWorkerToken });
+    worker.local.videoQueue = [pacedRow('legacy', { gatewayJobId: 'legacy', gatewayClaimId: 'old-claim', gatewayBinding: binding, target: 'gateway', gatewaySettled: false })];
+    worker.local.gatewayUnsettledClaim = { binding, claimId: 'old-claim', jobId: 'legacy' };
+    await worker.send({ type: 'resumeQueue' });
+    await waitFor(() => queueItem(worker)?.status === 'failed'); await worker.settled();
+    assert.match(queueItem(worker).error, /no observed quote\/account reservation/);
+    assert.equal(generated(worker), 0);
+  } finally { worker.restore(); }
+});
+
+test('account is checked again at the paid boundary after model preflight', async () => {
+  const replies = {};
+  const worker = await boot({ flowReplies: replies, onFlow(op) {
+    if (op === 'listVideoModels') replies.inspectAccount = { account: { ...worker.account(), accountId: 'changed-before-submit' } };
+  } });
+  try {
+    await worker.send({ type: 'gatewayClaimNow' });
+    await waitFor(() => queueItem(worker)?.status === 'failed'); await worker.settled();
+    assert.equal(generated(worker), 0);
+    assert.match(queueItem(worker).error, /actual provider account no longer matches/);
+  } finally { worker.restore(); }
+});
+
+test('a reply from the previous token cannot apply control to a new connection', async () => {
+  const worker = await boot({ onTelemetry(local) { local.gatewayWorkerToken = 'changed-fixture-token'; } });
+  try {
+    const response = await worker.send({ type: 'gatewayClaimNow' });
+    assert.equal(response.ok, false);
+    assert.match(response.error, /control was not applied/);
+    const currentBinding = await gatewayBinding({ ...worker.sync.videoSettings, gatewayToken: worker.local.gatewayWorkerToken });
+    assert.notEqual(worker.local.gatewayAppliedControl.binding, currentBinding);
+    assert.equal(count(worker, '/claim'), 0); assert.equal(generated(worker), 0);
   } finally { worker.restore(); }
 });
 

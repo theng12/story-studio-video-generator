@@ -33,14 +33,14 @@ export function classifyInterruptedItem(item) {
 }
 export function activeItemKey(item) { return [item.slug, item.episodeCode, item.sceneId, item.videoMode || 'image', item.videoModelKey, item.durationSec, item.aspectRatio, item.videoSource, item.imageModel, item.motionPrompt, item.imagePrompt].map((value) => String(value || '').trim().toLowerCase()).join('::'); }
 export function hasActiveDuplicate(queue, item) { return queue.some((candidate) => ['pending', 'running'].includes(candidate.status) && activeItemKey(candidate) === activeItemKey(item)); }
-export function migrateStoredQueue(queue) {
+export function migrateStoredQueue(queue, { recoverSubmissions = true } = {}) {
   let changed = false;
   const next = (Array.isArray(queue) ? queue : []).map((item) => {
     const legacy = item.videoModel;
     const copy = { ...item };
     for (const key of ['videoProvider', 'videoModel', 'workflowId', 'remainingCredits']) { if (key in copy) { delete copy[key]; changed = true; } }
     if (copy.videoMode !== 'text' && copy.videoMode !== 'image') { copy.videoMode = 'image'; changed = true; }
-    if (copy.phase === 'submitting' && !copy.videoMediaId) {
+    if (recoverSubmissions && copy.phase === 'submitting' && !copy.videoMediaId) {
       const recovery = classifyInterruptedItem(copy);
       if (Object.entries(recovery).some(([key, value]) => copy[key] !== value)) {
         Object.assign(copy, recovery);

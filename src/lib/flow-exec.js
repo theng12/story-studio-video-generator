@@ -364,6 +364,9 @@ export async function flowCommand(command) {
       checkVideo,
       getMedia,
       listVideoModels,
+      // No stable provider account/quote mapping is captured. Read-only inspection
+      // stays explicitly unbound; never derive identity from a cookie or profile.
+      inspectAccount: async () => ({ account: null, quote: null }),
       getContext,
       createProject,
     };

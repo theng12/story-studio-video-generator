@@ -24,7 +24,7 @@ test('new settings use 5–15 seconds; profile identity starts unknown', async (
   });
 });
 
-for (const [minimum, maximum] of [[0, 0], [5, 60], [23, 91]]) {
+for (const [minimum, maximum] of [[0, 0], [5, 60], [23, 91], [1.25, 2.75]]) {
   test(`existing custom pause ${minimum}–${maximum} survives unrelated save/reload`, async () => {
     await settingsFixture(async () => {
       await saveSettings({ theme: 'dark' });

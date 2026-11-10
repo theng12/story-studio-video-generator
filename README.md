@@ -105,7 +105,7 @@ capture and live acceptance remain missing and owned by Stack.
 ## Account labels and generation pacing
 
 Settings and the side panel edit the same saved pause range (0–3600 seconds).
-New settings default to a random whole-second 5–15-second pause; existing custom
+New settings default to a random 5–15-second pause; existing custom
 ranges, including 0–0, are retained. The first generation starts without a pause.
 The worker saves its sampled pause before each actual image/video submission and
 retains it through recovery, then starts the gap when that work finishes. A freshly
@@ -123,15 +123,37 @@ same image/video browser account/profile. Local `getQueue` telemetry returns
 `cooldownUntil`, timestamps in epoch milliseconds), and observed `manager.inventory`.
 No account readiness, credit balance or reset time is inferred from a label.
 
-These local fields are not a new Gateway wire contract. Relay/Gateway still need
-to agree the account/profile namespace and verified worker binding; account-wide
-claim eligibility and atomic reservation across image/video workers; pause policy
-and next-eligible/cooldown timestamps; unknown-paid-outcome holds and recovery; and
-observed credit value/unit, account scope, observation source/time and reset evidence.
-Balances must be counted once per verified account, never summed per extension.
-Until that contract is implemented, pacing and identity are local to this extension;
-they do not coordinate another extension or prove a shared browser sign-in. No
-Gateway authentication, authority, job schema or paid replay policy is changed.
+Gateway account-worker schema 1 now adds authenticated `/api/workers/telemetry`
+readback and `control` on health, telemetry and claim replies. Desired dispatch,
+close and pacing are saved locally; a revision is echoed only after actual dispatch
+and pacing readback matches. OFF survives restart and local Resume cannot override
+it. The manager's initial default range does not overwrite an existing custom range:
+actual pacing is reported, dispatch stays off and the unmatched revision is not
+acknowledged until a subsequent explicit control matches or changes it. Unsupported
+ranges above this extension's displayed 3600-second limit are refused without ack.
+Provider cooldowns remain authoritative; fractional custom ranges also persist.
+
+External state reports connection/sign-in/readiness independently from actual
+activity, enabled/paused state, control revision, pacing and next eligibility as
+zoned ISO timestamps. Unknown claims and active/recovering work never report an
+idle close acknowledgement. `closeRequested` never closes Chrome, cancels work,
+releases a hold or replays paid work; Gateway owns `safeToClose` and account-wide
+reservation/spending switches. New/missing dispatch control remains OFF. No app-only
+account enablement or manager token operation is called by the extension.
+
+A configured profile ID is never transmitted as provider account identity. The
+read-only Flow account/quote inspector currently returns unknown because no exact
+provider identity/quote mapping has been captured; external telemetry therefore
+omits `account`. No account readiness, balance, reset, plan or buckets are invented.
+An observed stable opaque provider account, fresh matching state/revision and an
+exact observed provider quote are required before a new executable Gateway claim.
+`quoteRequired.job` is an UNCLAIMED preview with `executionAuthorized:false`, never
+queued or generated. The quoted claim sends actual account observations in that
+same request, then verifies returned account/reservation and rechecks the signed-in
+account before provider actions. Known media and retained result delivery keep their
+recovery paths. Gateway remains the sole authentication/queue/artifact authority;
+its real enabled-account switch is never inferred from a quote or profile label.
+This source adoption is offline-tested, not installed/live qualification.
 
 ## Install
 

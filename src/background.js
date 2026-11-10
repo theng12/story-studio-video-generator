@@ -11,7 +11,8 @@ import { flowCommand } from './lib/flow-exec.js';
 import { inventoryResult, resolveVideoModel, snapshotVideoModel } from './lib/video-models.js';
 import { classifyInterruptedItem, hasActiveDuplicate, isAllowedFleetQueueAction, migrateStoredQueue, standaloneDownloadPath } from './lib/video-rules.js';
 import { gatewayJobToItem, isGatewayJobQueued } from './lib/gateway-worker.js';
-import { claimGatewayJob, gatewayBinding, reportGatewayFailure, reportGatewayProgress, reportGatewayResult, testGateway } from './lib/gateway-client.js';
+import { claimGatewayJob, gatewayBinding, reportGatewayFailure, reportGatewayProgress, reportGatewayResult, reportGatewayTelemetry, testGateway } from './lib/gateway-client.js';
+import { normalizeWorkerControl, observedAccount, observedQuote, workerObservation } from './lib/gateway-manager.js';
 import { getGatewayArtifact, putGatewayArtifact, deleteGatewayArtifact } from './lib/gateway-artifacts.js';
 
 const QUEUE_KEY = 'videoQueue';
@@ -32,6 +33,7 @@ const FLEET_MAX_AGE_MS = 60 * 1000;
 const GATEWAY_ALARM = 'gatewayWorkerTick';
 const GATEWAY_REFERENCES_KEY = 'gatewayJobReferences';
 const GATEWAY_CLAIM_KEY = 'gatewayUnsettledClaim';
+const GATEWAY_CONTROL_KEY = 'gatewayAppliedControl';
 
 let claiming = false;
 let processing = false;
@@ -374,9 +376,9 @@ async function writeStatus(text, kind = 'info', details = {}) {
   });
 }
 
-async function getQueue() {
+async function getQueue(recoverSubmissions = !processing) {
   const stored = (await chrome.storage.local.get(QUEUE_KEY))[QUEUE_KEY] || [];
-  const migrated = migrateStoredQueue(stored);
+  const migrated = migrateStoredQueue(stored, { recoverSubmissions });
   if (migrated.changed) await chrome.storage.local.set({ [QUEUE_KEY]: migrated.queue });
   return migrated.queue;
 }
@@ -393,6 +395,63 @@ async function gatewaySettings() {
   return { ...(await getSettings()), gatewayToken: await getGatewayToken() };
 }
 
+async function managerDispatchPaused(settings) {
+  const saved = (await chrome.storage.local.get(GATEWAY_CONTROL_KEY))[GATEWAY_CONTROL_KEY];
+  if (!saved) return settings.mode === 'gateway';
+  const current = await gatewaySettings();
+  try { return saved.binding !== await gatewayBinding(current) || !saved.dispatchEnabled; }
+  catch { return true; }
+}
+
+async function applyGatewayControl(raw, settings) {
+  const binding = await gatewayBinding(settings);
+  const previous = (await chrome.storage.local.get(GATEWAY_CONTROL_KEY))[GATEWAY_CONTROL_KEY];
+  if (raw && previous?.binding === binding && previous.revision === raw.revision &&
+      previous.dispatchEnabled === raw.dispatchEnabled && previous.closeRequested === (raw.closeRequested === true) &&
+      settings.humanDelayMinSec === raw.pacing?.minSeconds && settings.humanDelayMaxSec === raw.pacing?.maxSeconds) return;
+  // Stop dispatch before applying settings. A failed write must never acknowledge resume.
+  await chrome.storage.local.set({ [GATEWAY_CONTROL_KEY]: { binding, dispatchEnabled: false, revision: null } });
+  if (!raw) return;
+  const control = normalizeWorkerControl(raw);
+  const preserveLocalPacing = ((!previous || previous.binding !== binding) &&
+    control.pacing.minSeconds === 5 && control.pacing.maxSeconds === 15 &&
+    (settings.humanDelayMinSec !== 5 || settings.humanDelayMaxSec !== 15)) ||
+    (previous?.preserveLocalPacing && previous.requestedRevision === control.revision);
+  if (!preserveLocalPacing) await saveSettings({ humanDelayMinSec: control.pacing.minSeconds, humanDelayMaxSec: control.pacing.maxSeconds });
+  const actual = await getSettings();
+  const matches = actual.humanDelayMinSec === control.pacing.minSeconds && actual.humanDelayMaxSec === control.pacing.maxSeconds;
+  await chrome.storage.local.set({ [GATEWAY_CONTROL_KEY]: { ...control, binding, preserveLocalPacing,
+    dispatchEnabled: control.dispatchEnabled && matches,
+    requestedRevision: control.revision, revision: matches ? control.revision : null } });
+}
+
+async function gatewayObservation(settings, account = null) {
+  const [queue, paused, stored] = await Promise.all([getQueue(), isPaused(),
+    chrome.storage.local.get([GATEWAY_CLAIM_KEY, GATEWAY_CONTROL_KEY, NEXT_RUN_KEY, COOLDOWN_KEY])]);
+  let control = stored[GATEWAY_CONTROL_KEY];
+  if (control?.binding !== await gatewayBinding(settings)) control = null;
+  if (control?.pacing?.minSeconds !== settings.humanDelayMinSec || control?.pacing?.maxSeconds !== settings.humanDelayMaxSec) control = control ? { ...control, revision: null } : null;
+  return workerObservation(settings, { queue, paused, control, claim: stored[GATEWAY_CLAIM_KEY],
+    nextRunAt: Number(stored[NEXT_RUN_KEY]) || 0, cooldownUntil: Number(stored[COOLDOWN_KEY]) || 0 }, account);
+}
+
+async function applyBoundGatewayControl(control, requestSettings) {
+  const current = await gatewaySettings();
+  if (await gatewayBinding(current) !== await gatewayBinding(requestSettings)) {
+    throw new Error('Gateway connection changed during the request; its control was not applied.');
+  }
+  await applyGatewayControl(control, current);
+}
+
+async function publishGatewayState(settings, account = null) {
+  const current = await gatewaySettings();
+  if (await gatewayBinding(current) !== await gatewayBinding(settings)) throw new Error('Gateway connection changed before telemetry.');
+  const observation = await gatewayObservation(current, account);
+  const response = await reportGatewayTelemetry(settings, observation);
+  await applyBoundGatewayControl(response.control, settings);
+  return observation;
+}
+
 async function connectGateway() {
   const settings = await gatewaySettings();
   // The bearer token's authenticated identity replaces the old random local id.
@@ -402,7 +461,9 @@ async function connectGateway() {
     throw new Error('Gateway settings changed during connection.');
   }
   if (settings.gatewayWorkerId !== health.workerId) await saveSettings({ gatewayWorkerId: health.workerId });
-  return { settings: { ...settings, gatewayWorkerId: health.workerId }, health };
+  const connected = { ...settings, gatewayWorkerId: health.workerId };
+  await applyBoundGatewayControl(health.control, connected);
+  return { settings: await gatewaySettings(), health };
 }
 
 async function assertGatewayConnection(item) {
@@ -415,6 +476,18 @@ async function assertGatewayConnection(item) {
     throw new Error('Another Gateway claim needs review; this job remains held.');
   }
   return settings;
+}
+
+async function assertProviderAccount(item, tab) {
+  if (!item.gatewayJobId) return;
+  if (!item.gatewayAccountBinding || !/^[0-9a-f]{64}$/.test(item.gatewayReservation?.payloadSha256 || '')) {
+    throw new Error('Gateway generation has no observed quote/account reservation; no generation was submitted.');
+  }
+  const observed = observedAccount((await runFlow(tab.id, 'inspectAccount')).account, item.gatewayAccountMaxAgeSeconds);
+  if (!observed || observed.provider !== item.gatewayAccountBinding.provider || observed.accountId !== item.gatewayAccountBinding.accountId ||
+      observed.connection !== 'connected' || observed.signIn !== 'signed_in' || observed.readiness !== 'ready') {
+    throw new Error('The actual provider account no longer matches the claimed account; no generation was submitted.');
+  }
 }
 
 const artifactKey = (item) => `${item.gatewayBinding}/${item.gatewayClaimId}`;
@@ -468,14 +541,16 @@ async function gatewayTick() {
   try {
     await startupReady;
     const initial = await gatewaySettings();
-    if (initial.mode !== 'gateway' || !initial.gatewayUrl || !initial.gatewayToken || processing || await isPaused()) return null;
+    if (initial.mode !== 'gateway' || !initial.gatewayUrl || !initial.gatewayToken) return null;
+    const { settings, health } = await connectGateway();
+    await publishGatewayState(settings);
+    if (processing || await isPaused() || await managerDispatchPaused(await getSettings())) return null;
     const queue = await getQueue();
     if (queue.some((item) => ['pending', 'running'].includes(item.status) || (item.gatewayJobId && !item.gatewaySettled))) return null;
     if ((await chrome.storage.local.get(GATEWAY_CLAIM_KEY))[GATEWAY_CLAIM_KEY]) {
       throw new Error('A Gateway claim has an uncertain outcome; review is required before claiming again.');
     }
     if (await holdForCooldown(initial, { label: 'Gateway video' }) || await waitForPacing(initial, { label: 'Gateway video' })) return null;
-    const { settings } = await connectGateway();
     const tabs = await chrome.tabs.query({ url: flowWorkspace(settings).match });
     if (!tabs.some((tab) => tab.status === 'complete')) {
       await writeStatus('Open the signed-in Flow workspace before claiming Gateway video work.', 'info');
@@ -485,17 +560,50 @@ async function gatewayTick() {
     const current = await gatewaySettings();
     if (current.mode !== 'gateway' || await isPaused() || processing || await gatewayBinding(current) !== binding) return null;
     if (await holdForCooldown(current, { label: 'Gateway video' }) || await waitForPacing(current, { label: 'Gateway video' })) return null;
+    const tab = tabs.find((entry) => entry.status === 'complete');
+    const maxAge = health.accountMaxAgeSeconds;
+    const inspected = await runFlow(tab.id, 'inspectAccount');
+    const account = Number.isFinite(maxAge) && maxAge > 0 ? observedAccount(inspected.account, maxAge) : null;
+    await publishGatewayState(current, account);
+    let observation = await gatewayObservation(await gatewaySettings(), account);
+    if (!account || observation.telemetry.state.paused || !observation.telemetry.state.controlRevision ||
+        account.connection !== 'connected' || account.signIn !== 'signed_in' || account.readiness !== 'ready') return null;
     const claimId = createRandomId();
     await chrome.storage.local.set({ [GATEWAY_CLAIM_KEY]: { binding, claimId, at: Date.now() } });
-    const job = await claimGatewayJob(settings);
-    if (!job) {
-      await chrome.storage.local.remove(GATEWAY_CLAIM_KEY);
+    let receipt = await claimGatewayJob(settings, observation);
+    if (receipt) await applyBoundGatewayControl(receipt.control, settings);
+    if (!receipt || receipt.quoteRequired) await chrome.storage.local.remove(GATEWAY_CLAIM_KEY);
+    if (!receipt) return null;
+    if (!receipt.quoteRequired) throw new Error('Gateway returned executable work without an observed quote; claim remains held.');
+    // This preview is explicitly unclaimed. Never enqueue it or invoke generation.
+    const preview = receipt.quoteRequired;
+    const quoted = await runFlow(tab.id, 'inspectAccount', { preview });
+    const currentAccount = observedAccount(quoted.account, maxAge);
+    const quote = observedQuote(quoted.quote, currentAccount, preview, maxAge);
+    if (!quote || currentAccount.provider !== account.provider || currentAccount.accountId !== account.accountId ||
+        currentAccount.connection !== 'connected' || currentAccount.signIn !== 'signed_in' || currentAccount.readiness !== 'ready') {
+      await writeStatus('No exact provider quote/account observation; preview was not executed.', 'info');
       return null;
     }
+    observation = await gatewayObservation(await gatewaySettings(), currentAccount);
+    if (await isPaused() || processing || await managerDispatchPaused(await getSettings()) ||
+        await gatewayBinding(await gatewaySettings()) !== binding || !observation.telemetry.state.controlRevision ||
+        await holdForCooldown(await getSettings(), { label: 'Gateway video' }) ||
+        await waitForPacing(await getSettings(), { label: 'Gateway video' })) return null;
+    await chrome.storage.local.set({ [GATEWAY_CLAIM_KEY]: { binding, claimId, at: Date.now() } });
+    receipt = await claimGatewayJob(settings, observation, quote);
+    if (receipt) await applyBoundGatewayControl(receipt.control, settings);
+    if (!receipt || receipt.quoteRequired) { await chrome.storage.local.remove(GATEWAY_CLAIM_KEY); return null; }
+    const job = receipt.job;
     await chrome.storage.local.set({ [GATEWAY_CLAIM_KEY]: { binding, claimId, jobId: job.jobId, at: Date.now() } });
+    if (receipt.accountBinding?.provider !== currentAccount.provider || receipt.accountBinding?.accountId !== currentAccount.accountId ||
+        receipt.reservation?.payloadSha256 !== quote.payloadSha256 || receipt.reservation?.value !== quote.value || receipt.reservation?.unit !== quote.unit) {
+      throw new Error('Gateway reservation/account does not match the observed quote; ownership remains held.');
+    }
     const latest = await getQueue();
     if (isGatewayJobQueued(latest, job.jobId)) throw new Error('Gateway returned an already recorded job; the new claim remains held.');
-    const item = { ...gatewayJobToItem(job, settings), gatewayBinding: binding, gatewayClaimId: claimId };
+    const item = { ...gatewayJobToItem(job, settings), gatewayBinding: binding, gatewayClaimId: claimId,
+      gatewayAccountBinding: receipt.accountBinding, gatewayReservation: receipt.reservation, gatewayAccountMaxAgeSeconds: maxAge };
     await storeGatewayReferences(job.jobId, (job.referenceImages || []).filter((reference) => reference?.dataBase64));
     latest.push(item);
     await setQueue(latest);
@@ -669,17 +777,18 @@ async function setNextRun(settings, pauseMs) {
   if (pauseMs === undefined) {
     const minimum = settings.humanDelayMinSec;
     const maximum = settings.humanDelayMaxSec;
-    pauseMs = (minimum + Math.floor(Math.random() * (maximum - minimum + 1))) * 1000;
+    pauseMs = Math.round((minimum + Math.random() * (maximum - minimum)) * 1000);
   }
   await chrome.storage.local.set({ [NEXT_RUN_KEY]: Date.now() + pauseMs });
   return pauseMs;
 }
 
-async function generationBoundary(item) {
+async function generationBoundary(item, tab) {
   const settings = await getSettings();
-  if (await holdForCooldown(settings, item) || await waitForPacing(settings, item)) {
+  if (await managerDispatchPaused(settings) || await holdForCooldown(settings, item) || await waitForPacing(settings, item)) {
     throw Object.assign(new Error('The next generation is waiting for its saved pause.'), { code: 'VIDEO_PACING_WAIT' });
   }
+  await assertProviderAccount(item, tab);
   // Persist before the paid request so a worker restart cannot erase the pause.
   const pauseMs = await setNextRun(settings);
   await patchItem(item.id, { pendingGenerationPauseMs: pauseMs });
@@ -733,6 +842,7 @@ async function generateAndSave(item, settings, tab) {
   const mode = item.videoMode === 'text' ? 'text' : 'image';
 
   if (!item.videoMediaId) {
+    await assertProviderAccount(item, tab);
     if (Object.keys(item.unmappedFields || {}).length) {
       throw new Error('This video request contains unsupported fields. They were retained for review; no image or video was submitted.');
     }
@@ -770,7 +880,7 @@ async function generateAndSave(item, settings, tab) {
       }
       await patchItem(item.id, { startMediaId: item.startMediaId, phase: 'prepared' });
     } else if (item.videoSource === 'generate') {
-      const imagePauseMs = await generationBoundary(item);
+      const imagePauseMs = await generationBoundary(item, tab);
       await patchItem(item.id, { phase: 'image_submitting', imageSubmissionStartedAt: Date.now() });
       await writeStatus(`${item.label}: generating a start image…`, 'running');
       const generated = await runFlow(tab.id, 'generateImage', {
@@ -804,7 +914,7 @@ async function generateAndSave(item, settings, tab) {
     // Persist BEFORE the paid request. If the worker dies before receiving the
     // media id, startup quarantines this item instead of charging again.
     if (item.gatewayJobId) await assertGatewayConnection(item);
-    await generationBoundary(item);
+    await generationBoundary(item, tab);
     await patchItem(item.id, { phase: 'submitting', submissionStartedAt: Date.now() });
     await writeStatus(`${item.label}: submitting paid video generation…`, 'running');
     if (item.gatewayJobId) await assertGatewayConnection(item);
@@ -997,7 +1107,7 @@ async function processQueue() {
         await patchItem(pending.id, { pendingGenerationPauseMs: undefined });
       }
       if (!pending.videoMediaId && pending.phase !== 'delivery_pending' &&
-          (await holdForCooldown(settings, pending) || await waitForPacing(settings, pending))) {
+          (await managerDispatchPaused(settings) || await holdForCooldown(settings, pending) || await waitForPacing(settings, pending))) {
         if (pending.gatewayJobId) {
           await patchItem(pending.id, { status: 'failed', error: 'Eligibility changed after claim; Gateway work is held for review.' });
           await chrome.storage.local.set({ [PAUSED_KEY]: true });

@@ -25,6 +25,9 @@ test('modern unknown submission migration is persisted once and then stable', ()
   assert.equal(first.queue[0].status, 'ambiguous');
   assert.equal(first.queue[0].ambiguityKind, 'video');
   assert.equal(migrateStoredQueue(first.queue).changed, false);
+  const active = migrateStoredQueue([{ id: 'active', videoMode: 'text', videoModelKey: 'current', status: 'running', phase: 'submitting' }], { recoverSubmissions: false });
+  assert.equal(active.changed, false);
+  assert.equal(active.queue[0].status, 'running');
 });
 
 test('deduplicates only active equivalent work including generation settings', () => {

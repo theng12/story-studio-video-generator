@@ -111,24 +111,33 @@ export async function testGateway(settings) {
   if (configured && configured !== workerId) {
     throw new Error('Gateway health check failed: worker id does not match.');
   }
-  return { ok: true, workerId, kind: health.kind, maxResultBytes: health.maxResultBytes, leaseSeconds: health.leaseSeconds };
+  return { ok: true, workerId, kind: health.kind, maxResultBytes: health.maxResultBytes, leaseSeconds: health.leaseSeconds,
+    ...Object.fromEntries(['control', 'accountMaxAgeSeconds', 'claimMaxBytes'].filter((key) => Object.hasOwn(health, key)).map((key) => [key, health[key]])) };
 }
 
-export async function claimGatewayJob(settings) {
+export async function reportGatewayTelemetry(settings, observation) {
+  const path = '/api/workers/telemetry';
+  return acknowledged(path, await request(settings, path, {
+    method: 'POST', json: { workerId: requireWorkerId(settings), kind: 'video', ...observation },
+  }));
+}
+
+export async function claimGatewayJob(settings, observation = {}, quote) {
   const path = '/api/workers/claim';
   const result = await request(settings, path, {
     method: 'POST',
-    json: { workerId: requireWorkerId(settings), kind: 'video' },
+    json: { workerId: requireWorkerId(settings), kind: 'video', ...observation, ...(quote ? { quote } : {}) },
     timeoutMs: 35000,
     allowEmpty: true,
   });
   if (result === null) return null;
-  const job = result.job;
-  if (!job || typeof job !== 'object' || Array.isArray(job) || typeof job.jobId !== 'string' || !job.jobId.trim()) {
-    // A claimed job with no usable id may already have spent credits: throw so the caller holds it.
-    throw new Error(`Gateway ${path} failed: malformed job`);
+  const preview = result.quoteRequired;
+  const job = preview ? preview.job : result.job;
+  if (!job || typeof job !== 'object' || Array.isArray(job) || typeof job.jobId !== 'string' || !job.jobId.trim() ||
+      (preview && (result.job !== null || preview.executionAuthorized !== false || !/^[0-9a-f]{64}$/.test(preview.payloadSha256 || '')))) {
+    throw new Error(`Gateway ${path} failed: malformed job or preview`);
   }
-  return job;
+  return result;
 }
 
 export async function reportGatewayProgress(settings, jobId, phase, message = '') {

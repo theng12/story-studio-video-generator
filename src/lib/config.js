@@ -73,8 +73,8 @@ export function flowWorkspace(settings) {
 }
 
 function normalize(settings) {
-  const first = Math.max(0, Math.min(3600, Math.round(Number(settings.humanDelayMinSec) || 0)));
-  const second = Math.max(0, Math.min(3600, Math.round(Number(settings.humanDelayMaxSec) || 0)));
+  const first = Math.max(0, Math.min(3600, Number(settings.humanDelayMinSec) || 0));
+  const second = Math.max(0, Math.min(3600, Number(settings.humanDelayMaxSec) || 0));
   settings.humanDelayMinSec = Math.min(first, second);
   settings.humanDelayMaxSec = Math.max(first, second);
   settings.providerAccountProfileId = String(settings.providerAccountProfileId || '').trim().slice(0, 160);
