@@ -6,6 +6,7 @@
 - Interrupted or uncertain Gateway jobs stay held for review, including after restarting the extension.
 - Gateway connection checks report invalid replies and use the worker identity returned by the signed-in connection.
 - Gateway image-to-video keeps its supplied reference instead of generating a replacement image.
+- Saving connection settings preserves the connected worker. Connection checks do not request new work, and Claim now shows failures.
 
 ## 1.3.1
 

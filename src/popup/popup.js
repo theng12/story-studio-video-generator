@@ -174,11 +174,9 @@ async function changeVideoMode() {
 async function saveGatewaySettings() {
   settings = await saveSettings({
     gatewayUrl: $('gatewayUrl').value.trim(),
-    gatewayWorkerId: settings.gatewayWorkerId,
   });
   await saveGatewayToken($('gatewayToken').value);
   gatewayToken = await getGatewayToken();
-  await chrome.runtime.sendMessage({ type: 'gatewayModeChanged' }).catch(() => {});
   renderGatewaySettings();
 }
 
@@ -187,12 +185,15 @@ async function testGatewayConnection() {
   setStatus('Testing Gateway Studio…');
   const result = await chrome.runtime.sendMessage({ type: 'gatewayTest' });
   if (!result?.ok) throw new Error(result?.error || 'Gateway Studio is unreachable.');
+  settings = await getSettings();
+  renderGatewaySettings();
   setStatus('Gateway Studio connected.', 'ok');
 }
 
 async function claimGatewayNow() {
   await saveGatewaySettings();
-  await chrome.runtime.sendMessage({ type: 'gatewayClaimNow' });
+  const result = await chrome.runtime.sendMessage({ type: 'gatewayClaimNow' });
+  if (!result?.ok) throw new Error(result?.error || 'Gateway could not check for work.');
   await pollQueue();
   setStatus('Checked Gateway Studio for work.', 'ok');
 }
@@ -204,6 +205,7 @@ async function changeWorkingMode() {
   settings = await saveSettings({ mode });
   if (mode === 'gateway') {
     await saveGatewaySettings();
+    await chrome.runtime.sendMessage({ type: 'gatewayModeChanged' });
     renderWorkingMode();
     renderVideoMode();
     setStatus('Gateway Studio mode: the extension claims jobs from your gateway.', 'ok');
