@@ -2,15 +2,18 @@ import {
   getSettings,
   saveSettings,
   normalizeFlowProjectId,
+  flowWorkspace,
   getFleetCredentials,
+  getGatewayToken,
 } from './lib/config.js';
 import { StudioClient } from './lib/story-studio.js';
 import { flowCommand } from './lib/flow-exec.js';
 import { inventoryResult, resolveVideoModel, snapshotVideoModel } from './lib/video-models.js';
 import { classifyInterruptedItem, hasActiveDuplicate, isAllowedFleetQueueAction, migrateStoredQueue, standaloneDownloadPath } from './lib/video-rules.js';
+import { gatewayJobToItem, isGatewayJobQueued } from './lib/gateway-worker.js';
+import { claimGatewayJob, gatewayBinding, reportGatewayFailure, reportGatewayProgress, reportGatewayResult, testGateway } from './lib/gateway-client.js';
+import { getGatewayArtifact, putGatewayArtifact, deleteGatewayArtifact } from './lib/gateway-artifacts.js';
 
-const FLOW_URL = 'https://labs.google/fx/tools/flow';
-const FLOW_MATCH = 'https://labs.google/fx/*';
 const QUEUE_KEY = 'videoQueue';
 const FLOW_MODEL_INVENTORY_KEY = 'flowVideoModelInventory';
 const PAUSED_KEY = 'videoQueuePaused';
@@ -26,7 +29,11 @@ const FLEET_HUB_PAUSE_KEY = 'videoFleetHubPause';
 const FLEET_PROTOCOL_VERSION = 2;
 const FLEET_PATH = '/api/v2/agents/heartbeat';
 const FLEET_MAX_AGE_MS = 60 * 1000;
+const GATEWAY_ALARM = 'gatewayWorkerTick';
+const GATEWAY_REFERENCES_KEY = 'gatewayJobReferences';
+const GATEWAY_CLAIM_KEY = 'gatewayUnsettledClaim';
 
+let claiming = false;
 let processing = false;
 let sequence = 0;
 const fleetBootSessionId = createRandomId();
@@ -359,19 +366,162 @@ async function setQueue(queue) {
   await chrome.storage.local.set({ [QUEUE_KEY]: queue });
 }
 
+// ── Gateway Studio worker mode ─────────────────────────────────────────────
+// A separate third mode: the extension claims jobs instead of being driven
+// from the panel. Studio and standalone items never carry gatewayJobId, so the
+// existing paths run unchanged.
+async function gatewaySettings() {
+  return { ...(await getSettings()), gatewayToken: await getGatewayToken() };
+}
+
+async function connectGateway() {
+  const settings = await gatewaySettings();
+  // The bearer token's authenticated identity replaces the old random local id.
+  const health = await testGateway({ ...settings, gatewayWorkerId: '' });
+  const current = await gatewaySettings();
+  if (current.gatewayUrl !== settings.gatewayUrl || current.gatewayToken !== settings.gatewayToken || current.mode !== settings.mode) {
+    throw new Error('Gateway settings changed during connection.');
+  }
+  if (settings.gatewayWorkerId !== health.workerId) await saveSettings({ gatewayWorkerId: health.workerId });
+  return { settings: { ...settings, gatewayWorkerId: health.workerId }, health };
+}
+
+async function assertGatewayConnection(item) {
+  const settings = await gatewaySettings();
+  if (settings.mode !== 'gateway' || !item.gatewayBinding || await gatewayBinding(settings) !== item.gatewayBinding) {
+    throw new Error('Gateway connection changed; restore the claiming connection before retrying this job.');
+  }
+  const marker = (await chrome.storage.local.get(GATEWAY_CLAIM_KEY))[GATEWAY_CLAIM_KEY];
+  if (marker && (marker.claimId !== item.gatewayClaimId || marker.binding !== item.gatewayBinding || marker.jobId !== item.gatewayJobId)) {
+    throw new Error('Another Gateway claim needs review; this job remains held.');
+  }
+  return settings;
+}
+
+const artifactKey = (item) => `${item.gatewayBinding}/${item.gatewayClaimId}`;
+
+async function storeGatewayReferences(jobId, references) {
+  if (!Array.isArray(references) || !references.length) return;
+  const stored = (await chrome.storage.local.get(GATEWAY_REFERENCES_KEY))[GATEWAY_REFERENCES_KEY] || {};
+  stored[jobId] = references;
+  await chrome.storage.local.set({ [GATEWAY_REFERENCES_KEY]: stored });
+}
+
+async function gatewayReferences(jobId, remove = false) {
+  const stored = (await chrome.storage.local.get(GATEWAY_REFERENCES_KEY))[GATEWAY_REFERENCES_KEY] || {};
+  const references = Array.isArray(stored[jobId]) ? stored[jobId] : [];
+  if (remove && references.length) {
+    delete stored[jobId];
+    await chrome.storage.local.set({ [GATEWAY_REFERENCES_KEY]: stored });
+  }
+  return references;
+}
+
+async function settleGatewayClaim(item) {
+  const marker = (await chrome.storage.local.get(GATEWAY_CLAIM_KEY))[GATEWAY_CLAIM_KEY];
+  if (marker?.claimId && marker.claimId === item.gatewayClaimId && marker.binding === item.gatewayBinding && marker.jobId === item.gatewayJobId) {
+    await chrome.storage.local.remove(GATEWAY_CLAIM_KEY);
+  }
+}
+
+async function deliverGatewayArtifact(item, artifact) {
+  const settings = await assertGatewayConnection(item);
+  const health = await testGateway(settings);
+  if (artifact.binding !== item.gatewayBinding || artifact.jobId !== item.gatewayJobId || !artifact.buffer?.byteLength) {
+    throw new Error('Retained Gateway video does not match this claim; work is held.');
+  }
+  if (artifact.buffer.byteLength > health.maxResultBytes) {
+    throw new Error(`Gateway video exceeds the advertised ${health.maxResultBytes} byte result limit; bytes are retained.`);
+  }
+  await assertGatewayConnection(item);
+  await reportGatewayResult(settings, item.gatewayJobId, artifact.buffer, 'video/mp4');
+  // Persist acceptance before cleanup: an interrupted cleanup must never upload again.
+  await patchItem(item.id, { status: 'done', phase: 'done', gatewaySettled: true, finishedAt: Date.now(), error: undefined });
+  await settleGatewayClaim(item);
+  await deleteGatewayArtifact(artifactKey(item));
+  await gatewayReferences(item.gatewayJobId, true);
+  return `${item.gatewayJobId}.mp4`;
+}
+
+async function gatewayTick() {
+  if (claiming) return null;
+  claiming = true;
+  try {
+    await startupReady;
+    const initial = await gatewaySettings();
+    if (initial.mode !== 'gateway' || !initial.gatewayUrl || !initial.gatewayToken || processing || await isPaused()) return null;
+    const queue = await getQueue();
+    if (queue.some((item) => ['pending', 'running'].includes(item.status) || (item.gatewayJobId && !item.gatewaySettled))) return null;
+    if ((await chrome.storage.local.get(GATEWAY_CLAIM_KEY))[GATEWAY_CLAIM_KEY]) {
+      throw new Error('A Gateway claim has an uncertain outcome; review is required before claiming again.');
+    }
+    const { settings } = await connectGateway();
+    const tabs = await chrome.tabs.query({ url: flowWorkspace(settings).match });
+    if (!tabs.some((tab) => tab.status === 'complete')) {
+      await writeStatus('Open the signed-in Flow workspace before claiming Gateway video work.', 'info');
+      return null;
+    }
+    const binding = await gatewayBinding(settings);
+    const current = await gatewaySettings();
+    if (current.mode !== 'gateway' || await isPaused() || processing || await gatewayBinding(current) !== binding) return null;
+    const claimId = createRandomId();
+    await chrome.storage.local.set({ [GATEWAY_CLAIM_KEY]: { binding, claimId, at: Date.now() } });
+    const job = await claimGatewayJob(settings);
+    if (!job) {
+      await chrome.storage.local.remove(GATEWAY_CLAIM_KEY);
+      return null;
+    }
+    await chrome.storage.local.set({ [GATEWAY_CLAIM_KEY]: { binding, claimId, jobId: job.jobId, at: Date.now() } });
+    const latest = await getQueue();
+    if (isGatewayJobQueued(latest, job.jobId)) throw new Error('Gateway returned an already recorded job; the new claim remains held.');
+    const item = { ...gatewayJobToItem(job, settings), gatewayBinding: binding, gatewayClaimId: claimId };
+    await storeGatewayReferences(job.jobId, (job.referenceImages || []).filter((reference) => reference?.dataBase64));
+    latest.push(item);
+    await setQueue(latest);
+    createAlarm();
+    processQueue();
+    return item;
+  } catch (error) {
+    await writeStatus(String(error?.message || error), 'err');
+    throw error;
+  } finally {
+    claiming = false;
+  }
+}
+
+async function syncGatewayAlarm() {
+  try {
+    const settings = await getSettings();
+    if (settings.mode === 'gateway') {
+      chrome.alarms?.create(GATEWAY_ALARM, { periodInMinutes: 0.5 });
+      await gatewayTick().catch(() => {});
+    } else {
+      chrome.alarms?.clear(GATEWAY_ALARM);
+    }
+  } catch {
+    // The mode simply does not start; the panel still shows the setting.
+  }
+}
+
 async function patchItem(id, patch) {
   const queue = await getQueue();
   const item = queue.find((candidate) => candidate.id === id);
   if (item) Object.assign(item, patch);
   await setQueue(queue);
+  if (item?.gatewayJobId) {
+    assertGatewayConnection(item)
+      .then((settings) => reportGatewayProgress(settings, item.gatewayJobId, item.phase, item.label))
+      .catch(() => {});
+  }
   return item;
 }
 
 async function ensureFlowTab() {
-  const tabs = await chrome.tabs.query({ url: FLOW_MATCH });
+  const workspace = flowWorkspace(await getSettings());
+  const tabs = await chrome.tabs.query({ url: workspace.match });
   const ready = tabs.find((tab) => tab.status === 'complete');
   if (ready) return ready;
-  const tab = tabs[0] || (await chrome.tabs.create({ url: FLOW_URL, active: false }));
+  const tab = tabs[0] || (await chrome.tabs.create({ url: workspace.url, active: false }));
   if (tab.status !== 'complete') {
     await new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
@@ -393,8 +543,9 @@ async function ensureFlowTab() {
 
 async function runFlow(tabId, op, payload = {}) {
   const tab = await chrome.tabs.get(tabId);
-  if (!/^https:\/\/labs\.google\/fx\//i.test(tab?.url || '')) {
-    throw new Error('Refusing to run a Flow command outside labs.google/fx.');
+  const { origin } = flowWorkspace(await getSettings());
+  if (!String(tab?.url || '').startsWith(`${origin}/`)) {
+    throw new Error(`Refusing to run a Flow command outside ${origin}.`);
   }
   const [{ result } = {}] = await chrome.scripting.executeScript({
     target: { tabId },
@@ -419,9 +570,9 @@ async function refreshFlowModels(tab) {
   return { ok: true, ...inventory };
 }
 
-async function requireCurrentModel(modelKey, tab) {
+async function requireCurrentModel(modelKey, tab, mode) {
   const inventory = await refreshFlowModels(tab);
-  return { ...resolveVideoModel(modelKey, inventory.models), source: inventory.source };
+  return { ...resolveVideoModel(modelKey, inventory.models, mode), source: inventory.source };
 }
 
 async function createFlowProject() {
@@ -432,32 +583,44 @@ async function createFlowProject() {
     flowProjectName: created.title || '',
   });
   await chrome.tabs.update(tab.id, {
-    url: `${FLOW_URL}/project/${created.projectId}`,
+    url: flowWorkspace(await getSettings()).project(created.projectId),
     autoDiscardable: false,
   });
   return { ok: true, ...created };
 }
 
-async function fetchVideo(mediaId) {
-  const endpoint =
-    `https://labs.google/fx/api/trpc/media.getMediaUrlRedirect` +
-    `?name=${encodeURIComponent(mediaId)}&mediaUrlType=MEDIA_URL_TYPE_FULL_MEDIA`;
-  const response = await fetch(endpoint, { credentials: 'include' });
-  if (!response.ok) throw new Error(`Video retrieval failed (${response.status}).`);
-  const mediaUrl = new URL(response.url);
+async function fetchVideo(tab, projectId, mediaId) {
+  const media = await runFlow(tab.id, 'getMedia', { projectId, mediaId });
+  const mediaUrl = new URL(String(media?.url || ''));
   if (
     mediaUrl.protocol !== 'https:' ||
-    !(mediaUrl.hostname === 'flow-content.google' ||
-      mediaUrl.hostname.endsWith('.flow-content.google'))
+    !(mediaUrl.hostname === 'flow-content.google' || mediaUrl.hostname.endsWith('.flow-content.google')) ||
+    !mediaUrl.pathname.startsWith('/video/')
   ) {
     throw new Error('Flow returned an untrusted video URL.');
   }
+  const response = await fetch(mediaUrl.href, { credentials: 'omit', redirect: 'error' });
+  if (!response.ok) throw new Error(`Video retrieval failed (${response.status}).`);
   const contentType = response.headers.get('content-type') || '';
   if (!contentType.startsWith('video/')) throw new Error('Flow returned a non-video asset.');
-  const buffer = await response.arrayBuffer();
-  if (!buffer.byteLength) throw new Error('Retrieved video was empty.');
-  if (buffer.byteLength > 256 * 1024 * 1024) throw new Error('Retrieved video exceeded 256 MB.');
-  return buffer;
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error('Video retrieval did not provide a readable body.');
+  const chunks = [];
+  let size = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > 256 * 1024 * 1024) throw new Error('Retrieved video exceeded 256 MB.');
+      chunks.push(value);
+    }
+  } finally {
+    await reader.cancel().catch(() => {});
+    reader.releaseLock();
+  }
+  if (!size) throw new Error('Retrieved video was empty.');
+  return new Blob(chunks, { type: contentType }).arrayBuffer();
 }
 
 function bufferToBase64(buffer) {
@@ -529,17 +692,42 @@ async function generateAndSave(item, settings, tab) {
   const projectId = normalizeFlowProjectId(item.projectId || settings.flowProjectId);
   if (!projectId) throw new Error('No Flow project selected.');
   const studio = new StudioClient(settings.studioBaseUrl);
+  const mode = item.videoMode === 'text' ? 'text' : 'image';
 
   if (!item.videoMediaId) {
-    const model = await requireCurrentModel(item.videoModelKey, tab);
+    const model = await requireCurrentModel(item.videoModelKey, tab, mode);
+    if (item.gatewayJobId) {
+      if (model.source !== 'live') throw new Error('Live Flow model availability is unknown; Gateway video was not submitted.');
+      // Captured Flow keys encode their duration; never silently substitute another length.
+      const duration = Number(model.key.match(/_(\d+)s$/)?.[1]);
+      if (!Number.isSafeInteger(duration) || duration <= 0 || duration !== item.durationSec) {
+        throw new Error('Gateway video duration does not match the selected Flow model.');
+      }
+    }
     if (model.label !== item.videoModelLabel) {
       throw new Error('The selected Flow model changed. Refresh models and queue again.');
     }
   }
 
-  if (!item.startMediaId) {
+  if (mode === 'image' && !item.startMediaId) {
     await patchItem(item.id, { phase: 'preparing' });
-    if (item.videoSource === 'generate') {
+    if (item.gatewayJobId) {
+      await assertGatewayConnection(item);
+      const references = await gatewayReferences(item.gatewayJobId);
+      if (references[0]) {
+        await writeStatus(`${item.label}: uploading the reference image…`, 'running');
+        const uploaded = await runFlow(tab.id, 'uploadImage', {
+          projectId,
+          base64: references[0].dataBase64,
+          mime: references[0].mediaType || 'image/png',
+          fileName: `${item.gatewayJobId}.png`,
+        });
+        item.startMediaId = uploaded.mediaId;
+      } else {
+        throw new Error('Gateway image-to-video reference is missing; no replacement image was generated.');
+      }
+      await patchItem(item.id, { startMediaId: item.startMediaId, phase: 'prepared' });
+    } else if (item.videoSource === 'generate') {
       await patchItem(item.id, { phase: 'image_submitting', imageSubmissionStartedAt: Date.now() });
       await writeStatus(`${item.label}: generating a start image…`, 'running');
       const generated = await runFlow(tab.id, 'generateImage', {
@@ -561,23 +749,28 @@ async function generateAndSave(item, settings, tab) {
         fileName: `${item.sceneId}.png`,
       });
       item.startMediaId = uploaded.mediaId;
+      await patchItem(item.id, { startMediaId: item.startMediaId, phase: 'prepared' });
     }
-    if (item.videoSource !== 'generate') await patchItem(item.id, { startMediaId: item.startMediaId, phase: 'prepared' });
   }
 
   if (!item.videoMediaId) {
     // Persist BEFORE the paid request. If the worker dies before receiving the
     // media id, startup quarantines this item instead of charging again.
+    if (item.gatewayJobId) await assertGatewayConnection(item);
     await patchItem(item.id, { phase: 'submitting', submissionStartedAt: Date.now() });
     await writeStatus(`${item.label}: submitting paid video generation…`, 'running');
-    const submitted = await runFlow(tab.id, 'submitVideoStartImage', {
+    if (item.gatewayJobId) await assertGatewayConnection(item);
+    const submitted = await runFlow(tab.id, 'submitVideo', {
       projectId,
+      mode,
+      prompt: item.motionPrompt,
       mediaId: item.startMediaId,
-      motionPrompt: item.motionPrompt,
       modelKey: item.videoModelKey,
       aspectRatio: item.aspectRatio,
-      durationSec: item.durationSec,
     });
+    if (typeof submitted?.mediaId !== 'string' || !submitted.mediaId.trim()) {
+      throw new Error('Flow submission returned no video id; the paid outcome remains unknown.');
+    }
     item.videoMediaId = submitted.mediaId;
     await patchItem(item.id, {
       videoMediaId: submitted.mediaId,
@@ -592,19 +785,20 @@ async function generateAndSave(item, settings, tab) {
       mediaId: item.videoMediaId,
     });
     if (status.done) break;
-    if (status.failed) throw new Error(`Flow video generation ${status.status}.`);
-    if (Date.now() > deadline) throw new Error(`Video timed out (${status.status}).`);
-    await writeStatus(
-      `${item.label}: ${String(status.status)
-        .replace('MEDIA_GENERATION_STATUS_', '')
-        .toLowerCase()}…`,
-      'running'
-    );
+    if (status.failed) throw new Error(`Flow video generation failed (status ${status.status}).`);
+    if (Date.now() > deadline) throw new Error(`Video timed out (status ${status.status}).`);
+    await writeStatus(`${item.label}: generating video…`, 'running');
     await sleep(10000);
   }
 
   await patchItem(item.id, { phase: item.target === 'download' ? 'downloading' : 'ingesting' });
-  const mp4 = await fetchVideo(item.videoMediaId);
+  const mp4 = await fetchVideo(tab, projectId, item.videoMediaId);
+  if (item.target === 'gateway') {
+    const artifact = { binding: item.gatewayBinding, jobId: item.gatewayJobId, buffer: mp4 };
+    await putGatewayArtifact(artifactKey(item), artifact);
+    await patchItem(item.id, { phase: 'delivery_pending' });
+    return deliverGatewayArtifact(item, artifact);
+  }
   if (item.target === 'download') {
     const filename = `${String(item.downloadPath || 'StoryStudioVideos/Standalone/video.mp4').replace(/\.(mp4|webm)$/i, '')}.mp4`;
     await chrome.downloads.download({
@@ -627,8 +821,9 @@ async function enqueueScenes(payload) {
   const settings = await getSettings();
   const projectId = normalizeFlowProjectId(payload.projectId || settings.flowProjectId);
   if (!projectId) throw new Error('Select a Flow project before queuing videos.');
+  const mode = payload.videoMode === 'text' ? 'text' : 'image';
   const inventory = await refreshFlowModels();
-  const snapshot = snapshotVideoModel(payload.videoModelKey, inventory.models, inventory.source);
+  const snapshot = snapshotVideoModel(payload.videoModelKey, inventory.models, inventory.source, mode);
   const model = { key: snapshot.videoModelKey, label: snapshot.videoModelLabel };
   const queueModel = {
     videoModelKey: model.key,
@@ -660,7 +855,8 @@ async function enqueueScenes(payload) {
       durationSec: scene.durationSec,
       projectId,
       ...queueModel,
-      videoSource: payload.videoSource || settings.videoSource,
+      videoMode: mode,
+      videoSource: mode === 'image' ? payload.videoSource || settings.videoSource : null,
       imageModel: settings.imageModel,
       aspectRatio: payload.aspectRatio || settings.aspectRatio,
     };
@@ -696,8 +892,9 @@ async function enqueueStandalone(payload) {
     : [String(payload?.prompt || '').trim()].filter(Boolean);
   if (!projectId) throw new Error('Select a generation workspace before queuing a video.');
   if (!prompts.length) throw new Error('Enter at least one video prompt before queuing.');
+  const mode = payload?.videoMode === 'text' ? 'text' : 'image';
   const inventory = await refreshFlowModels();
-  const snapshot = snapshotVideoModel(payload.videoModelKey, inventory.models, inventory.source);
+  const snapshot = snapshotVideoModel(payload.videoModelKey, inventory.models, inventory.source, mode);
   const model = { key: snapshot.videoModelKey, label: snapshot.videoModelLabel };
   const queueModel = {
     videoModelKey: model.key,
@@ -725,7 +922,8 @@ async function enqueueStandalone(payload) {
       durationSec: 4,
       projectId,
       ...queueModel,
-      videoSource: 'generate',
+      videoMode: mode,
+      videoSource: mode === 'image' ? 'generate' : null,
       imageModel: settings.imageModel,
       aspectRatio: payload.aspectRatio || settings.aspectRatio,
       target: 'download',
@@ -749,12 +947,14 @@ async function processQueue() {
   if (processing) return;
   processing = true;
   try {
+    await startupReady;
     for (;;) {
       if (await isPaused()) break;
       const queue = await getQueue();
       const pending = queue.find((item) => item.status === 'pending');
       if (!pending) break;
       const settings = await getSettings();
+      if (pending.gatewayJobId && settings.mode !== 'gateway') break;
       if (await holdForCooldown(settings, pending)) break;
       await waitForPacing(settings, pending);
       if (await isPaused()) break;
@@ -765,9 +965,20 @@ async function processQueue() {
       if (!current) continue;
       let providerAttempted = false;
       try {
-        const tab = await ensureFlowTab();
-        providerAttempted = true;
-        const savedAs = await generateAndSave(current, settings, tab);
+        let artifact;
+        if (current.gatewayJobId) {
+          await assertGatewayConnection(current);
+          artifact = await getGatewayArtifact(artifactKey(current));
+          if (!artifact && current.phase === 'delivery_pending') throw new Error('Retained Gateway video is missing; work remains held.');
+        }
+        let savedAs;
+        if (artifact) {
+          savedAs = await deliverGatewayArtifact(current, artifact);
+        } else {
+          const tab = await ensureFlowTab();
+          providerAttempted = true;
+          savedAs = await generateAndSave(current, settings, tab);
+        }
         await patchItem(current.id, {
           status: 'done',
           phase: 'done',
@@ -778,6 +989,33 @@ async function processQueue() {
       } catch (error) {
         const latest = (await getQueue()).find((item) => item.id === current.id) || current;
         const recovery = classifyInterruptedItem(latest);
+        if (current.gatewayJobId) {
+          if (latest.gatewaySettled) {
+            await writeStatus('Gateway accepted the video; retained-file cleanup needs attention.', 'err');
+            break;
+          }
+          let settled = false;
+          const uncertain = recovery.status === 'ambiguous' || Boolean(latest.videoMediaId) || latest.phase === 'delivery_pending';
+          // A known video id or retained result is delivery work, never a definite unspent failure.
+          if (!latest.videoMediaId && latest.phase !== 'delivery_pending') {
+            try {
+              const gateway = await assertGatewayConnection(latest);
+              await reportGatewayFailure(gateway, latest.gatewayJobId, 'Video worker could not complete this job.', uncertain);
+              settled = !uncertain;
+            } catch { /* Unacknowledged ownership remains held. */ }
+          }
+          await patchItem(current.id, {
+            status: recovery.status === 'ambiguous' ? 'ambiguous' : 'failed',
+            ambiguityKind: recovery.ambiguityKind,
+            gatewaySettled: settled,
+            error: String(error?.message || error),
+            finishedAt: Date.now(),
+          });
+          if (settled) await settleGatewayClaim(latest);
+          await chrome.storage.local.set({ [PAUSED_KEY]: true });
+          await writeStatus(settled ? 'Gateway acknowledged the failure; video queue paused.' : 'Gateway video is held; retained work will not regenerate automatically.', 'err');
+          break;
+        }
         if (recovery.status === 'ambiguous') {
           await patchItem(current.id, {
             status: 'ambiguous',
@@ -828,6 +1066,19 @@ async function retryItem(id, acceptAmbiguousRisk = false) {
   if (!item || !['failed', 'ambiguous'].includes(item.status)) {
     return { ok: false, error: 'Video job is not retryable.' };
   }
+  if (item.gatewayJobId) {
+    if (item.gatewaySettled || item.status === 'ambiguous') {
+      return { ok: false, error: 'This Gateway job must be resolved in Gateway; generation will not be replayed here.' };
+    }
+    const gateway = await assertGatewayConnection(item);
+    if (!item.videoMediaId && item.phase !== 'delivery_pending') {
+      await reportGatewayFailure(gateway, item.gatewayJobId, 'Video worker could not complete this job.', false);
+      item.gatewaySettled = true;
+      await setQueue(queue);
+      await settleGatewayClaim(item);
+      return { ok: true };
+    }
+  }
   if (item.status === 'ambiguous' && !acceptAmbiguousRisk) {
     return { ok: false, ambiguous: true, error: 'Explicit duplicate-charge acceptance is required.' };
   }
@@ -847,7 +1098,7 @@ async function retryItem(id, acceptAmbiguousRisk = false) {
 
 async function clearQueue() {
   const queue = await getQueue();
-  await setQueue(queue.filter((item) => item.status !== 'pending'));
+  await setQueue(queue.filter((item) => item.gatewayJobId || item.status !== 'pending'));
   return { ok: true };
 }
 
@@ -855,15 +1106,23 @@ async function recoverInterruptedJobs() {
   const queue = await getQueue();
   let changed = false;
   for (const item of queue) {
+    if (item.gatewayJobId && item.gatewaySettled) {
+      await settleGatewayClaim(item);
+      await deleteGatewayArtifact(artifactKey(item));
+      await gatewayReferences(item.gatewayJobId, true);
+      continue;
+    }
     if (item.status !== 'running') continue;
     changed = true;
-    Object.assign(item, classifyInterruptedItem(item));
+    const recovery = classifyInterruptedItem(item);
+    Object.assign(item, recovery);
+    if (item.gatewayJobId && recovery.status !== 'ambiguous') {
+      item.status = 'failed';
+      item.error = 'Interrupted Gateway work is retained. Retry only resumes polling or result delivery.';
+    }
   }
   if (changed) await setQueue(queue);
-  if (queue.some((item) => item.status === 'pending')) {
-    createAlarm();
-    processQueue();
-  }
+  if (queue.some((item) => item.status === 'pending')) createAlarm();
 }
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
@@ -936,6 +1195,15 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       createFleetAlarm();
       reply(Promise.resolve({ ok: true }));
       return true;
+    case 'gatewayTest':
+      reply(connectGateway().then(({ health }) => health));
+      return true;
+    case 'gatewayModeChanged':
+      reply(syncGatewayAlarm().then(() => ({ ok: true })));
+      return true;
+    case 'gatewayClaimNow':
+      reply(gatewayTick().then(() => ({ ok: true })));
+      return true;
     default:
       return false;
   }
@@ -943,6 +1211,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
 chrome.alarms?.onAlarm?.addListener((alarm) => {
   if (alarm.name === ALARM) processQueue();
+  if (alarm.name === GATEWAY_ALARM) gatewayTick().catch(() => {});
   if (alarm.name === FLEET_ALARM) {
     sendFleetHeartbeat().catch(async (error) => {
       await chrome.storage.local.set({
@@ -958,5 +1227,9 @@ try {
   // Older Chrome versions do not support sidePanel.
 }
 
-recoverInterruptedJobs();
-createFleetAlarm();
+const startupReady = recoverInterruptedJobs();
+startupReady.then(() => {
+  createFleetAlarm();
+  syncGatewayAlarm();
+  processQueue();
+}).catch(() => writeStatus('Video recovery failed; retained work is held.', 'err'));

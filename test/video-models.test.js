@@ -3,91 +3,111 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import {
   FALLBACK_VIDEO_MODELS,
+  defaultVideoModel,
   inventoryResult,
-  migrateLegacyVideoModel,
+  modelsForMode,
   normalizeVideoInventory,
   resolveVideoModel,
   snapshotVideoModel,
   upgradeStoredVideoSettings,
 } from '../src/lib/video-models.js';
 
+test('catalog exposes tested models for both video sources', () => {
+  assert.equal(modelsForMode(FALLBACK_VIDEO_MODELS, 'text').length, 2);
+  assert.equal(modelsForMode(FALLBACK_VIDEO_MODELS, 'image').length, 2);
+  assert.equal(defaultVideoModel('text').key, 'macaron_cookie_t2v_4s');
+  assert.equal(defaultVideoModel('image').key, 'macaron_cookie_r2v_3s');
+  assert.equal(defaultVideoModel('text').mode, 'text');
+  assert.equal(defaultVideoModel('image').mode, 'image');
+});
+
+test('includes the captured Omni 1.2 Flash keys', () => {
+  assert.ok(FALLBACK_VIDEO_MODELS.some((model) => model.key === 'macaron_cookie_t2v_4s' && model.mode === 'text'));
+  assert.ok(FALLBACK_VIDEO_MODELS.some((model) => model.key === 'macaron_cookie_r2v_3s' && model.mode === 'image'));
+});
+
 test('normalizes only exact provider keys paired with distinct labels', () => {
   assert.deepEqual(
     normalizeVideoInventory([
-      { key: 'veo_4_i2v_fast', label: 'Veo 4 Fast' },
-      { key: 'veo_4_i2v_fast', label: 'Duplicate' },
+      { key: 'veo_4_t2v_fast', label: 'Veo 4 Fast', mode: 'text' },
+      { key: 'veo_4_t2v_fast', label: 'Duplicate', mode: 'text' },
       { key: 'Made Up Model', label: 'Made Up Model' },
-      { key: 'veo_4_i2v_quality', label: '' },
+      { key: 'some_key_here', label: '' },
     ]),
-    [{ key: 'veo_4_i2v_fast', label: 'Veo 4 Fast' }]
+    [{ key: 'veo_4_t2v_fast', label: 'Veo 4 Fast', mode: 'text' }]
+  );
+  assert.deepEqual(
+    normalizeVideoInventory([{ key: 'veo_i2v', label: 'Veo Image' }]),
+    [{ key: 'veo_i2v', label: 'Veo Image', mode: 'image' }]
   );
 });
 
 test('uses live inventory only for a signed Flow project and fallback otherwise', () => {
-  assert.deepEqual(inventoryResult([{ key: 'veo_4_i2v_fast', label: 'Veo 4 Fast' }], { signedIn: true, projectId: 'project-id' }), {
-    source: 'live',
-    models: [{ key: 'veo_4_i2v_fast', label: 'Veo 4 Fast' }],
-  });
+  const live = inventoryResult(
+    [{ key: 'veo_4_t2v_fast', label: 'Veo 4 Fast', mode: 'text' }],
+    { signedIn: true, projectId: 'project-id' }
+  );
+  assert.equal(live.source, 'live');
   assert.deepEqual(inventoryResult([]), { source: 'fallback', models: FALLBACK_VIDEO_MODELS });
-  assert.deepEqual(inventoryResult([{ key: 'veo_4_i2v_fast', label: 'Veo 4 Fast' }], { signedIn: false, projectId: 'project-id' }), { source: 'fallback', models: FALLBACK_VIDEO_MODELS });
-  assert.deepEqual(inventoryResult([{ key: 'veo_4_i2v_fast', label: 'Veo 4 Fast' }], { signedIn: true, projectId: '' }), { source: 'fallback', models: FALLBACK_VIDEO_MODELS });
+  assert.equal(
+    inventoryResult([{ key: 'veo_4_t2v_fast', label: 'Veo 4 Fast' }], { signedIn: false, projectId: 'project-id' }).source,
+    'fallback'
+  );
+  assert.equal(
+    inventoryResult([{ key: 'veo_4_t2v_fast', label: 'Veo 4 Fast' }], { signedIn: true, projectId: '' }).source,
+    'fallback'
+  );
 });
 
-test('resolves exact selections and refuses unknown or malformed keys', () => {
-  const models = [{ key: 'veo_4_i2v_fast', label: 'Veo 4 Fast' }];
-  assert.deepEqual(resolveVideoModel('veo_4_i2v_fast', models), models[0]);
-  assert.throws(() => resolveVideoModel('Veo 4 Fast', models), /exact Flow model/);
-  assert.throws(() => resolveVideoModel('veo_3_1_i2v_fast', models), /not available/);
+test('resolves exact selections per video source and refuses mismatches', () => {
+  const models = [
+    { key: 'veo_t2v', label: 'Veo Text', mode: 'text' },
+    { key: 'veo_i2v', label: 'Veo Image', mode: 'image' },
+  ];
+  assert.deepEqual(resolveVideoModel('veo_t2v', models, 'text'), models[0]);
+  assert.throws(() => resolveVideoModel('veo_t2v', models, 'image'), /not available/);
+  assert.throws(() => resolveVideoModel('Veo Text', models, 'text'), /exact Flow model/);
 });
 
-test('migrates only the four previously shipped model choices', () => {
-  assert.deepEqual(migrateLegacyVideoModel('veo-3.1-fast'), {
-    key: 'veo_3_1_i2v_fast',
-    label: 'Veo 3.1 Fast',
-  });
-  assert.throws(() => migrateLegacyVideoModel('future-display-name'), /legacy video model/);
-});
-
-test('upgrades raw stored settings before defaults can hide the legacy field', () => {
-  assert.deepEqual(upgradeStoredVideoSettings({ videoModel: 'veo-3.1-fast', theme: 'dark' }), {
-    videoModelKey: 'veo_3_1_i2v_fast',
-    videoModelLabel: 'Veo 3.1 Fast',
+test('snapshots executable model metadata for the selected source', () => {
+  const imageModel = defaultVideoModel('image');
+  assert.deepEqual(snapshotVideoModel(imageModel.key, FALLBACK_VIDEO_MODELS, 'fallback', 'image'), {
+    videoModelKey: imageModel.key,
+    videoModelLabel: imageModel.label,
     videoModelSource: 'fallback',
-    theme: 'dark',
   });
-  assert.deepEqual(upgradeStoredVideoSettings({ videoModel: 'unknown-old-value' }), {});
+  assert.throws(
+    () => snapshotVideoModel(defaultVideoModel('text').key, FALLBACK_VIDEO_MODELS, 'fallback', 'image'),
+    /not available/
+  );
 });
 
-test('Flow exposes one read-only video inventory operation and no model fallback at submission', async () => {
+test('drops the retired pre-1.2 settings before defaults apply', () => {
+  assert.deepEqual(upgradeStoredVideoSettings({ videoModel: 'veo-3.1-fast', theme: 'dark' }), { theme: 'dark' });
+});
+
+test('Flow helper speaks the captured batchexecute contract', async () => {
   const source = await readFile(new URL('../src/lib/flow-exec.js', import.meta.url), 'utf8');
-  assert.match(source, /listVideoModels/);
-  assert.match(source, /signedIn/);
-  assert.match(source, /videoModelKey:\s*payload\.modelKey/);
-  assert.doesNotMatch(source, /I2V_MODELS\[.*\]\s*\|\|/);
-  assert.doesNotMatch(source, /transportKey/);
-  assert.doesNotMatch(source, /script\[type=.*application\/json/);
+  assert.match(source, /textToVideo:\s*'YhhmEf'/);
+  assert.match(source, /imageToVideo:\s*'MZZa6b'/);
+  assert.match(source, /checkVideo:\s*'jwpduf'/);
+  assert.match(source, /getMedia:\s*'as29s'/);
+  assert.match(source, /AiSandboxAngularFrontend\/data\/batchexecute/);
+  assert.doesNotMatch(source, /labs\.google/);
+  assert.doesNotMatch(source, /aisandbox-pa/);
 });
 
-test('queue snapshots exact model metadata and removes provider state', async () => {
+test('background submits both video sources and fetches the signed media URL', async () => {
   const source = await readFile(new URL('../src/background.js', import.meta.url), 'utf8');
-  assert.match(source, /videoModelKey:\s*model\.key/);
-  assert.match(source, /videoModelLabel:\s*model\.label/);
-  assert.doesNotMatch(source, /videoProvider:/);
+  assert.match(source, /runFlow\(tab\.id, 'submitVideo'/);
+  assert.match(source, /runFlow\(tab\.id, 'getMedia'/);
+  assert.match(source, /videoMode/);
+  assert.doesNotMatch(source, /submitVideoStartImage/);
 });
 
-test('snapshotVideoModel returns executable exact queue metadata and refuses stale selections', () => {
-  const models = [{ key: 'veo_4_i2v_fast', label: 'Veo 4 Fast' }];
-  assert.deepEqual(snapshotVideoModel('veo_4_i2v_fast', models, 'live'), {
-    videoModelKey: 'veo_4_i2v_fast',
-    videoModelLabel: 'Veo 4 Fast',
-    videoModelSource: 'live',
-  });
-  assert.throws(() => snapshotVideoModel('removed_key', models, 'live'), /not available/);
-});
-
-test('panel identifies live or fallback inventory and has an explicit refresh action', async () => {
+test('panel exposes the video source control and inventory provenance', async () => {
   const html = await readFile(new URL('../src/popup/popup.html', import.meta.url), 'utf8');
+  assert.match(html, /id="videoMode"/);
   assert.match(html, /id="modelInventoryState"/);
   assert.match(html, /id="refreshModels"/);
-  assert.doesNotMatch(html, /id="videoProvider"/);
 });

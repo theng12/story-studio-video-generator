@@ -1,4 +1,6 @@
-import { upgradeStoredVideoSettings } from './video-models.js';
+import { FALLBACK_VIDEO_MODELS, defaultVideoModel, modelsForMode, upgradeStoredVideoSettings } from './video-models.js';
+
+const DEFAULT_VIDEO_MODEL = defaultVideoModel('image');
 
 export const DEFAULTS = {
   theme: 'system',
@@ -6,8 +8,15 @@ export const DEFAULTS = {
   studioBaseUrl: 'http://localhost:8766',
   flowProjectId: '',
   flowProjectName: '',
-  videoModelKey: 'veo_3_1_i2v_fast',
-  videoModelLabel: 'Veo 3.1 Fast',
+  // Where Google Flow lives. Google moved it once already (labs.google/fx →
+  // flow.google.com); the next move is a Settings edit, not a code change.
+  flowWorkspaceUrl: 'https://flow.google.com',
+  // 'text' generates directly from the motion prompt; 'image' starts from a
+  // scene/uploaded/generated image. The current Flow app uses a different model
+  // key for each, so the mode and model move together.
+  videoMode: 'image',
+  videoModelKey: DEFAULT_VIDEO_MODEL.key,
+  videoModelLabel: DEFAULT_VIDEO_MODEL.label,
   videoModelSource: 'fallback',
   videoSource: 'existing',
   imageModel: 'nano-banana-2',
@@ -24,6 +33,11 @@ export const DEFAULTS = {
   fleetQueueControlConsent: false,
   lastProject: '',
   lastEpisode: '',
+  // Third, separate mode: Gateway Studio claims generation jobs from this
+  // extension. The token lives in local storage (never sync); the URL and
+  // worker id are syncable convenience values.
+  gatewayUrl: 'http://127.0.0.1:8787',
+  gatewayWorkerId: '',
 };
 
 const STORAGE_KEY = 'videoSettings';
@@ -39,6 +53,23 @@ export function normalizeFlowProjectId(value) {
   return match ? match[1].toLowerCase() : raw;
 }
 
+// Only the https origin is kept: the worker builds the tab URL, the tab-match
+// pattern, and the "is this really a Flow tab" guard from it.
+export function normalizeFlowWorkspaceUrl(value) {
+  try {
+    const url = new URL(String(value || '').trim());
+    if (url.protocol === 'https:' && url.hostname) return url.origin;
+  } catch {
+    /* fall through to the default */
+  }
+  return DEFAULTS.flowWorkspaceUrl;
+}
+
+export function flowWorkspace(settings) {
+  const origin = normalizeFlowWorkspaceUrl(settings?.flowWorkspaceUrl);
+  return { origin, url: `${origin}/`, match: `${origin}/*`, project: (id) => `${origin}/project/${id}` };
+}
+
 function normalize(settings) {
   const first = Math.max(0, Math.min(3600, Math.round(Number(settings.humanDelayMinSec) || 0)));
   const second = Math.max(0, Math.min(3600, Math.round(Number(settings.humanDelayMaxSec) || 0)));
@@ -50,9 +81,21 @@ function normalize(settings) {
     minutes: Math.max(1, Math.min(1440, Math.round(Number(cooldown.minutes) || 15))),
   };
   settings.flowProjectId = normalizeFlowProjectId(settings.flowProjectId);
-  if (!['studio', 'standalone'].includes(settings.mode)) settings.mode = DEFAULTS.mode;
+  settings.flowWorkspaceUrl = normalizeFlowWorkspaceUrl(settings.flowWorkspaceUrl);
+  if (!['studio', 'standalone', 'gateway'].includes(settings.mode)) settings.mode = DEFAULTS.mode;
+  settings.gatewayUrl = String(settings.gatewayUrl || DEFAULTS.gatewayUrl).trim().replace(/\/+$/, '');
+  settings.gatewayWorkerId = String(settings.gatewayWorkerId || '').trim().slice(0, 160);
+  if (!['image', 'text'].includes(settings.videoMode)) settings.videoMode = DEFAULTS.videoMode;
   if (!['existing', 'generate'].includes(settings.videoSource)) settings.videoSource = DEFAULTS.videoSource;
   if (!['16:9', '9:16'].includes(settings.aspectRatio)) settings.aspectRatio = DEFAULTS.aspectRatio;
+  // The two video sources use different model keys, so a stale selection must
+  // resolve to the current catalog instead of being sent to Flow.
+  const catalog = modelsForMode(FALLBACK_VIDEO_MODELS, settings.videoMode);
+  const selected = catalog.find((model) => model.key === settings.videoModelKey);
+  const chosen = selected || defaultVideoModel(settings.videoMode);
+  settings.videoModelKey = chosen.key;
+  settings.videoModelLabel = chosen.label;
+  if (!selected) settings.videoModelSource = 'fallback';
   settings.fleetEnabled = settings.fleetEnabled === true;
   settings.fleetHubUrl = String(settings.fleetHubUrl || DEFAULTS.fleetHubUrl).trim().replace(/\/$/, '');
   settings.fleetMachineName = String(settings.fleetMachineName || '').trim().slice(0, 80);
@@ -105,4 +148,15 @@ export async function saveFleetCredentials(credentials) {
       pairingSecret: String(credentials?.pairingSecret || '').trim(),
     },
   });
+}
+
+const GATEWAY_TOKEN_KEY = 'gatewayWorkerToken';
+
+export async function getGatewayToken() {
+  const stored = await chrome.storage.local.get(GATEWAY_TOKEN_KEY);
+  return String(stored[GATEWAY_TOKEN_KEY] || '');
+}
+
+export async function saveGatewayToken(token) {
+  await chrome.storage.local.set({ [GATEWAY_TOKEN_KEY]: String(token || '').trim() });
 }

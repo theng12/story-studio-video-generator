@@ -4,9 +4,10 @@ import { access, readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-test('manifest is valid, versioned 1.1.0, and every declared file exists', async () => {
+test('manifest version matches the newest release notes and every declared file exists', async () => {
   const manifest = JSON.parse(await readFile(resolve(root, 'manifest.json'), 'utf8'));
-  assert.equal(manifest.version, '1.1.0');
+  const notes = await readFile(resolve(root, 'CHANGELOG.md'), 'utf8');
+  assert.equal(manifest.version, notes.match(/^## (\d+\.\d+\.\d+)/m)?.[1]);
   const paths = [manifest.background.service_worker, manifest.side_panel.default_path, manifest.options_page, ...Object.values(manifest.icons), ...Object.values(manifest.action.default_icon)];
   await Promise.all([...new Set(paths)].map((path) => access(resolve(root, path))));
 });
