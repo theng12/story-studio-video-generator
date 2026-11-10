@@ -695,6 +695,9 @@ async function generateAndSave(item, settings, tab) {
   const mode = item.videoMode === 'text' ? 'text' : 'image';
 
   if (!item.videoMediaId) {
+    if (Object.keys(item.unmappedFields || {}).length) {
+      throw new Error('This video request contains unsupported fields. They were retained for review; no image or video was submitted.');
+    }
     const model = await requireCurrentModel(item.videoModelKey, tab, mode);
     if (model.source !== 'live') {
       throw new Error('Live Flow model availability is unknown; the current model and duration request mapping is unverified. No image or video was submitted.');

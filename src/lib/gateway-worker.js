@@ -3,6 +3,7 @@
 // touched; the queue processor only sees ordinary items with a gatewayJobId.
 
 export const GATEWAY_KINDS = Object.freeze(['video']);
+const JOB_FIELDS = new Set(['jobId', 'kind', 'prompt', 'videoMode', 'modelKey', 'modelLabel', 'durationSec', 'aspectRatio', 'referenceImages', 'flowProjectId']);
 
 export function createGatewayWorkerId() {
   if (globalThis.crypto?.randomUUID) return `worker_${crypto.randomUUID()}`;
@@ -41,6 +42,8 @@ export function normalizeGatewayJob(job) {
     aspectRatio: job?.aspectRatio === '9:16' ? '9:16' : '16:9',
     references,
     flowProjectId: String(job?.flowProjectId || '').trim(),
+    // Future controls stay inert until their counterpart/request mapping exists.
+    unmappedFields: structuredClone(Object.fromEntries(Object.entries(job).filter(([key]) => !JOB_FIELDS.has(key)))),
   };
 }
 
@@ -62,6 +65,7 @@ export function gatewayJobToItem(job, settings) {
     motionPrompt: normalized.prompt,
     imagePrompt: normalized.prompt,
     durationSec: normalized.durationSec,
+    unmappedFields: normalized.unmappedFields,
     projectId,
     videoModelKey: normalized.modelKey,
     videoModelLabel: normalized.modelLabel,

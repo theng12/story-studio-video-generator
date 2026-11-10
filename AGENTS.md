@@ -14,5 +14,28 @@ do not route gateway work through the studio/standalone UI paths.
 Keep the queue persistent, sequential, deduplicated, and independent of the side
 panel. Preserve Story Studio clip ingestion and Downloads naming.
 
+## Future extension and release checklist (owner, 2026-11-10)
+
+- All three generator extensions must discover and list newly appearing models
+  dynamically. Preserve observed listing separately from verified request schema,
+  supported controls and successful generation; listing alone proves none of them.
+- Recheck newly appearing controls and extra durations at each normal release.
+  Carry supported controls through Story and Gateway; at minimum preserve scene
+  duration separately from selected/generated clip length, including on reload.
+- Keep unknown request fields as inert metadata; never flatten them into queue
+  execution state, silently drop them or substitute a default. Refuse unsupported
+  control mappings before provider submission until counterpart semantics agree.
+- Obtain the exact Story/Gateway counterpart contract for discovery identity,
+  observation freshness, control values, scene/clip duration semantics, immutable
+  job binding, unknown-field round-trip and explicit unsupported/refusal states.
+  Do not invent that wire schema in this extension.
+- Verify each executable model/source/duration/control combination against its
+  actual sanitized provider request. UI menus, quotes, labels, public bundles and
+  historical fallback source are observations only. Zero current video request
+  captures means no current video transport is proven. Keep unknown paid outcomes
+  held; retained media/results must never be regenerated for delivery retry.
+- Record offline checks separately from live browser/provider evidence. Stack
+  owns that browser/provider work; a source checkpoint does not authorize it.
+
 Before handoff, run `node --check` on every JavaScript file, parse the manifest,
 confirm declared files exist, and run `git diff --check` from this repository root.

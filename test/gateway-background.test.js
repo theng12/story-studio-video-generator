@@ -384,6 +384,20 @@ for (const mode of ['studio', 'standalone']) {
   });
 }
 
+test('unknown Gateway controls are retained and refuse provider work without a default substitution', async () => {
+  const worker = await boot({ job: { ...JOB, futureControl: { value: 'unmapped' }, sceneDurationSec: 12 } });
+  try {
+    await worker.send({ type: 'gatewayClaimNow' });
+    await waitFor(() => queueItem(worker)?.status === 'failed'); await worker.settled();
+    const row = queueItem(worker);
+    assert.deepEqual(row.unmappedFields, { futureControl: { value: 'unmapped' }, sceneDurationSec: 12 });
+    assert.equal(row.durationSec, JOB.durationSec);
+    assert.match(row.error, /unsupported fields.*retained for review/);
+    assert.equal(worker.provider.filter(({ op }) => ['submitVideo', 'generateImage', 'uploadImage'].includes(op)).length, 0);
+    assert.equal(row.gatewaySettled, true);
+  } finally { worker.restore(); }
+});
+
 test('unverified Standalone duration is refused before queueing or fresh-image generation', async () => {
   const model = FALLBACK_VIDEO_MODELS.find((entry) => entry.mode === 'image');
   const worker = await boot({ mode: 'standalone' });

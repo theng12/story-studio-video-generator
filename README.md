@@ -82,6 +82,26 @@ its selected duration, aspect, resolution and output count. Until those mappings
 and live availability are captured, the corresponding combinations remain
 unavailable, and Gateway keeps its existing live-inventory refusal.
 
+## Discovery and control parity: future releases
+
+The owner requires all three generator extensions to list new models dynamically
+and carry newly supported controls and durations through Story and Gateway. This
+is a release requirement, not a claim that current live discovery is implemented.
+The maintained checklist is in `AGENTS.md`. An observed listing, a verified request
+schema, control support and a successful generation are distinct evidence states.
+
+Story scene timeline duration is retained separately from the selected clip
+length. Unknown Gateway request fields are retained as inert `unmappedFields` on
+the queue row and refuse new provider work; they never become executable queue
+state or silently disappear. Existing known media and retained delivery bytes do
+not regenerate because new metadata is present.
+
+The missing Story/Gateway counterpart contract must define discovery identity
+and freshness, each control's type/value domain, scene-versus-clip duration,
+immutable job binding, unknown-field round-trip and unsupported/refusal reporting.
+No new wire schema or model/duration IDs are inferred here. Current video request
+capture and live acceptance remain missing and owned by Stack.
+
 ## Install
 
 1. Open `chrome://extensions` and enable **Developer mode**.

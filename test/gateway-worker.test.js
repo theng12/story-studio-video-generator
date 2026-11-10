@@ -60,6 +60,22 @@ test('deduplicates a claimed job that is already queued', () => {
   assert.equal(isGatewayJobQueued([item], 'job_2'), false);
 });
 
+test('unknown controls and scene duration survive as detached inert metadata', () => {
+  const job = { ...JOB, futureControl: { choices: ['future-value'] }, sceneDurationSec: 12,
+    status: 'done', videoMediaId: 'untrusted-media' };
+  const item = gatewayJobToItem(job, {});
+  assert.equal(item.durationSec, 8);
+  assert.deepEqual(item.unmappedFields, { futureControl: { choices: ['future-value'] },
+    sceneDurationSec: 12, status: 'done', videoMediaId: 'untrusted-media' });
+  assert.equal(item.status, 'pending');
+  assert.equal(item.videoMediaId, undefined);
+  job.futureControl.choices.push('later-mutation');
+  assert.deepEqual(item.unmappedFields.futureControl.choices, ['future-value']);
+  const reloaded = JSON.parse(JSON.stringify(item));
+  assert.equal(reloaded.unmappedFields.sceneDurationSec, 12);
+  assert.deepEqual(reloaded.unmappedFields.futureControl.choices, ['future-value']);
+});
+
 test('worker ids are stable, prefixed values', () => {
   assert.match(createGatewayWorkerId(), /^worker_/);
 });
