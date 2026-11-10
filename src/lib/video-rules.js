@@ -40,7 +40,13 @@ export function migrateStoredQueue(queue) {
     const copy = { ...item };
     for (const key of ['videoProvider', 'videoModel', 'workflowId', 'remainingCredits']) { if (key in copy) { delete copy[key]; changed = true; } }
     if (copy.videoMode !== 'text' && copy.videoMode !== 'image') { copy.videoMode = 'image'; changed = true; }
-    if (copy.phase === 'submitting' && !copy.videoMediaId) Object.assign(copy, classifyInterruptedItem(copy));
+    if (copy.phase === 'submitting' && !copy.videoMediaId) {
+      const recovery = classifyInterruptedItem(copy);
+      if (Object.entries(recovery).some(([key, value]) => copy[key] !== value)) {
+        Object.assign(copy, recovery);
+        changed = true;
+      }
+    }
     else if (!copy.videoMediaId && !copy.videoModelKey && legacy) {
       Object.assign(copy, { status: 'failed', error: 'Unknown legacy video model. Refresh Flow models and requeue this item.' });
       changed = true;

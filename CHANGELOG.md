@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.4 — 2026-11-11
+
+- New settings use a random 5–15-second pause between generations, with no first-job delay. Existing custom pauses, including zero, stay saved.
+- Pauses survive extension restarts and hold new Gateway claims until eligible; polling and saved-result delivery do not create another pause.
+- Shared account profile labels can match the image and video extensions. Unknown sign-in, credits and reset times stay unknown.
+
 ## 1.3.3 — 2026-11-10
 
 - Clip length stays with your model choice, saved settings and queued videos.

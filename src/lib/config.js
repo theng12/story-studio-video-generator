@@ -23,7 +23,8 @@ export const DEFAULTS = {
   imageModel: 'nano-banana-2',
   aspectRatio: '16:9',
   humanDelayMinSec: 5,
-  humanDelayMaxSec: 60,
+  humanDelayMaxSec: 15,
+  providerAccountProfileId: '',
   // A temporary service limit can either pause the queue for review or wait
   // before safely retrying work that never reached paid submission.
   providerCooldown: { autoResume: false, minutes: 15 },
@@ -76,6 +77,7 @@ function normalize(settings) {
   const second = Math.max(0, Math.min(3600, Math.round(Number(settings.humanDelayMaxSec) || 0)));
   settings.humanDelayMinSec = Math.min(first, second);
   settings.humanDelayMaxSec = Math.max(first, second);
+  settings.providerAccountProfileId = String(settings.providerAccountProfileId || '').trim().slice(0, 160);
   const cooldown = settings.providerCooldown || {};
   settings.providerCooldown = {
     autoResume: cooldown.autoResume === true,

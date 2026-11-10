@@ -41,18 +41,18 @@ async function boot({ local = {}, sync, rows = new Map(), mode = 'gateway', job 
   const desiredMode = sync.videoSettings.mode;
   sync.videoSettings.mode = 'studio';
   const prior = Object.fromEntries(['chrome', 'fetch', 'indexedDB'].map((key) => [key, globalThis[key]]));
-  const calls = [], provider = [], downloads = [], alarms = [];
+  const calls = [], provider = [], downloads = [], alarms = [], scheduled = [];
   let listener;
   globalThis.indexedDB = indexedStorage(rows);
   globalThis.chrome = {
     storage: { local: area(local), sync: area(sync) },
     runtime: { onMessage: { addListener(fn) { listener = fn; } } },
-    alarms: { create() {}, clear() {}, onAlarm: { addListener(fn) { alarms.push(fn); } } },
+    alarms: { create(name, options) { scheduled.push({ name, ...options }); }, clear() {}, onAlarm: { addListener(fn) { alarms.push(fn); } } },
     sidePanel: { setPanelBehavior: async () => {} },
     tabs: { query: async () => { await onTabs?.(sync); return noTabs ? [] : [{ id: 7, status: 'complete' }]; }, get: async () => ({ id: 7, url: `https://flow.google.com/project/${PROJECT}` }), create: async () => { throw new Error('Fixture refuses a new provider tab.'); } },
     scripting: { async executeScript({ args: [{ op, payload }] }) {
       provider.push({ op, payload });
-      await onFlow?.(op, local);
+      await onFlow?.(op, local, payload);
       const result = flowReplies[op] || {
         listVideoModels: { entries: FALLBACK_VIDEO_MODELS, signedIn: true, projectId: PROJECT },
         uploadImage: { mediaId: 'start-media' },
@@ -93,9 +93,9 @@ async function boot({ local = {}, sync, rows = new Map(), mode = 'gateway', job 
   await import(`../src/background.js?video-runtime=${Date.now()}-${Math.random()}`);
   await pause(25);
   sync.videoSettings.mode = desiredMode;
-  return { local, sync, rows, calls, provider, downloads,
+  return { local, sync, rows, calls, provider, downloads, scheduled,
     send(message) { return new Promise((resolve) => listener(message, {}, resolve)); },
-    tick() { for (const alarm of alarms) alarm({ name: 'gatewayWorkerTick' }); },
+    tick(name = 'gatewayWorkerTick') { for (const alarm of alarms) alarm({ name }); },
     async settled() { await pause(30); },
     restore() { for (const [key, value] of Object.entries(prior)) globalThis[key] = value; },
   };
@@ -449,3 +449,279 @@ for (const mode of ['studio', 'standalone']) {
     } finally { worker.restore(); }
   });
 }
+
+// Synthetic inventory and a controlled clock exercise scheduling, never real paid work.
+function pacingClock(t) {
+  const original = Date.now;
+  let now = 1800000000000;
+  Date.now = () => now;
+  t.after(() => { Date.now = original; });
+  return { advanceTo(value) { now = value; } };
+}
+function pacedSync(mode = 'standalone', extra = {}) {
+  return { videoSettings: { mode, gatewayUrl: 'http://127.0.0.1:49873', flowProjectId: PROJECT,
+    humanDelayMinSec: 5, humanDelayMaxSec: 15, fleetEnabled: false, ...extra } };
+}
+function pacedRow(id = 'paced-video', extra = {}) {
+  return { id, label: id, status: 'pending', phase: 'queued', videoMode: 'text',
+    videoModelKey: MODEL.key, videoModelLabel: MODEL.label, durationSec: MODEL.durationSec,
+    projectId: PROJECT, target: 'download', motionPrompt: 'Offline pacing fixture.', ...extra };
+}
+
+test('first generation is immediate; next deadline persists across restart and native alarm', async (t) => {
+  const clock = pacingClock(t);
+  let worker = await boot({ sync: pacedSync(), local: { videoQueue: [pacedRow('one'), pacedRow('two')] },
+    onFlow(op, local) { if (op === 'submitVideo') assert.ok(local.nextVideoProviderRunAt > Date.now()); } });
+  try {
+    await waitFor(() => queueItem(worker)?.status === 'done'); await worker.settled();
+    assert.equal(generated(worker), 1);
+    assert.equal(worker.local.videoQueue[1].status, 'pending');
+    const next = worker.local.nextVideoProviderRunAt;
+    assert.ok(next >= Date.now() + 5000 && next <= Date.now() + 15000);
+    assert.ok(worker.scheduled.some((alarm) => alarm.name === 'videoQueueTick' && alarm.when === next));
+    const state = { local: worker.local, sync: worker.sync };
+    worker.restore();
+    worker = await boot(state);
+    assert.equal(generated(worker), 0);
+    assert.equal(worker.local.nextVideoProviderRunAt, next);
+    clock.advanceTo(next);
+    worker.tick('videoQueueTick');
+    await waitFor(() => worker.local.videoQueue[1].status === 'done'); await worker.settled();
+    assert.equal(generated(worker), 1);
+  } finally { worker.restore(); }
+});
+
+test('explicit zero override clears an old deadline and runs consecutive generations', async (t) => {
+  pacingClock(t);
+  const worker = await boot({ sync: pacedSync('standalone', { humanDelayMinSec: 0, humanDelayMaxSec: 0 }),
+    local: { nextVideoProviderRunAt: Date.now() + 60000, videoQueue: [pacedRow('one'), pacedRow('two')] } });
+  try {
+    await waitFor(() => worker.local.videoQueue.every((row) => row.status === 'done')); await worker.settled();
+    assert.equal(generated(worker), 2);
+    assert.ok(!worker.scheduled.some((alarm) => alarm.when > Date.now()));
+    assert.equal(worker.sync.videoSettings.humanDelayMaxSec, 0);
+  } finally { worker.restore(); }
+});
+
+test('fresh image finishes then pauses before video; restart reuses its media id', async (t) => {
+  const clock = pacingClock(t);
+  const model = FALLBACK_VIDEO_MODELS.find((entry) => entry.mode === 'image');
+  let worker = await boot({ sync: pacedSync(), local: { videoQueue: [pacedRow('fresh-image', {
+    videoMode: 'image', videoSource: 'generate', videoModelKey: model.key, videoModelLabel: model.label, durationSec: model.durationSec,
+  })] } });
+  try {
+    await waitFor(() => queueItem(worker)?.startMediaId && queueItem(worker).status === 'pending'); await worker.settled();
+    assert.equal(worker.provider.filter(({ op }) => op === 'generateImage').length, 1);
+    assert.equal(generated(worker), 0);
+    const next = worker.local.nextVideoProviderRunAt;
+    assert.ok(next > Date.now());
+    const state = { local: worker.local, sync: worker.sync };
+    worker.restore(); clock.advanceTo(next);
+    worker = await boot(state);
+    await waitFor(() => queueItem(worker)?.status === 'done'); await worker.settled();
+    assert.equal(worker.provider.filter(({ op }) => op === 'generateImage').length, 0);
+    assert.equal(generated(worker), 1);
+    assert.equal(worker.provider.find(({ op }) => op === 'submitVideo').payload.mediaId, 'start-media');
+  } finally { worker.restore(); }
+});
+
+test('known paid media keeps its sampled completion pause after restart, without image replay', async (t) => {
+  pacingClock(t);
+  const worker = await boot({ sync: pacedSync(), local: { nextVideoProviderRunAt: Date.now() - 1,
+    videoQueue: [pacedRow('recover', { status: 'running', phase: 'polling', videoMode: 'image', videoSource: 'generate',
+      videoMediaId: 'known-video', pendingGenerationPauseMs: 11000 }), pacedRow('next')] } });
+  try {
+    await waitFor(() => queueItem(worker)?.status === 'done'); await worker.settled();
+    assert.equal(generated(worker), 0);
+    assert.equal(worker.provider.filter(({ op }) => op === 'generateImage').length, 0);
+    assert.equal(worker.local.nextVideoProviderRunAt, Date.now() + 11000);
+    assert.equal(worker.local.videoQueue[1].status, 'pending');
+    assert.equal(queueItem(worker).pendingGenerationPauseMs, undefined);
+  } finally { worker.restore(); }
+});
+
+test('known-media recovery without a new generation does not extend an existing gap or cooldown', async (t) => {
+  pacingClock(t);
+  const next = Date.now() + 9000, cooldown = Date.now() + 45000;
+  const worker = await boot({ sync: pacedSync(), local: { nextVideoProviderRunAt: next, videoProviderCooldownUntil: cooldown,
+    videoQueue: [pacedRow('poll-only', { phase: 'polling', videoMediaId: 'known-video' })] } });
+  try {
+    await waitFor(() => queueItem(worker)?.status === 'done'); await worker.settled();
+    assert.equal(generated(worker), 0);
+    assert.equal(worker.local.nextVideoProviderRunAt, next);
+    assert.equal(worker.local.videoProviderCooldownUntil, cooldown);
+  } finally { worker.restore(); }
+});
+
+test('preflight refusal never samples a generation pause', async (t) => {
+  pacingClock(t);
+  const worker = await boot({ sync: pacedSync(), local: { videoQueue: [pacedRow()] },
+    flowReplies: { listVideoModels: { entries: [], signedIn: true, projectId: PROJECT } } });
+  try {
+    await waitFor(() => queueItem(worker)?.status === 'failed'); await worker.settled();
+    assert.equal(generated(worker), 0);
+    assert.equal(worker.local.nextVideoProviderRunAt, undefined);
+  } finally { worker.restore(); }
+});
+
+test('Gateway waits before claim, rechecks a changed deadline after preflight, and claims once eligible', async (t) => {
+  const clock = pacingClock(t);
+  let moved = false;
+  const worker = await boot({ sync: pacedSync('gateway'), local: { nextVideoProviderRunAt: Date.now() + 6000 },
+    onTabs() { if (!moved) { moved = true; worker.local.nextVideoProviderRunAt = Date.now() + 8000; } } });
+  try {
+    await worker.send({ type: 'gatewayClaimNow' });
+    assert.equal(count(worker, '/claim'), 0); assert.equal(worker.local.gatewayUnsettledClaim, undefined);
+    clock.advanceTo(worker.local.nextVideoProviderRunAt);
+    await worker.send({ type: 'gatewayClaimNow' });
+    assert.equal(count(worker, '/claim'), 0); assert.equal(worker.local.gatewayUnsettledClaim, undefined);
+    clock.advanceTo(worker.local.nextVideoProviderRunAt);
+    await Promise.all([worker.send({ type: 'gatewayClaimNow' }), worker.send({ type: 'gatewayClaimNow' })]);
+    await waitFor(() => queueItem(worker)?.status === 'done'); await worker.settled();
+    assert.equal(count(worker, '/claim'), 1); assert.equal(generated(worker), 1);
+  } finally { worker.restore(); }
+});
+
+for (const autoResume of [false, true]) {
+  test(`provider cooldown stays authoritative before claims (auto-resume ${autoResume})`, async (t) => {
+    const clock = pacingClock(t);
+    const until = Date.now() + 30000;
+    const worker = await boot({ sync: pacedSync('gateway', { humanDelayMinSec: 0, humanDelayMaxSec: 0,
+      providerCooldown: { autoResume, minutes: 15 } }), local: { videoProviderCooldownUntil: until } });
+    try {
+      await worker.send({ type: 'gatewayClaimNow' });
+      assert.equal(count(worker, '/claim'), 0);
+      assert.equal(worker.local.videoProviderCooldownUntil, until);
+      if (!autoResume) {
+        assert.equal(worker.local.videoQueuePaused, true);
+        clock.advanceTo(until); worker.tick(); await worker.settled();
+        assert.equal(count(worker, '/claim'), 0);
+      } else {
+        clock.advanceTo(until); worker.tick();
+        await waitFor(() => queueItem(worker)?.status === 'done'); await worker.settled();
+        assert.equal(count(worker, '/claim'), 1);
+      }
+    } finally { worker.restore(); }
+  });
+}
+
+test('unknown paid outcome keeps claim and queue held despite elapsed pacing', async (t) => {
+  const clock = pacingClock(t);
+  const worker = await boot({ sync: pacedSync('gateway'), onFlow(op) {
+    if (op === 'submitVideo') throw new Error('Fixture lost paid submission response.');
+  } });
+  try {
+    await worker.send({ type: 'gatewayClaimNow' });
+    await waitFor(() => queueItem(worker)?.status === 'ambiguous'); await worker.settled();
+    assert.equal(queueItem(worker).phase, 'submitting');
+    assert.equal(worker.local.videoQueuePaused, true);
+    assert.ok(worker.local.gatewayUnsettledClaim);
+    assert.equal(JSON.parse(worker.calls.find(({ url }) => url.endsWith('/fail')).init.body).ambiguous, true);
+    clock.advanceTo(worker.local.nextVideoProviderRunAt + 60000);
+    worker.tick('videoQueueTick'); await worker.settled();
+    await worker.send({ type: 'gatewayClaimNow' });
+    assert.equal(count(worker, '/claim'), 1); assert.equal(generated(worker), 1);
+  } finally { worker.restore(); }
+});
+
+test('eligibility changed while claiming holds ownership for review without a delayed paid request', async (t) => {
+  const clock = pacingClock(t);
+  const worker = await boot({ sync: pacedSync('gateway'), onClaim(local) { local.nextVideoProviderRunAt = Date.now() + 60000; } });
+  try {
+    await worker.send({ type: 'gatewayClaimNow' });
+    await waitFor(() => queueItem(worker)?.status === 'failed'); await worker.settled();
+    assert.match(queueItem(worker).error, /Eligibility changed after claim/);
+    assert.equal(worker.local.videoQueuePaused, true);
+    assert.ok(worker.local.gatewayUnsettledClaim);
+    assert.equal(generated(worker), 0);
+    clock.advanceTo(worker.local.nextVideoProviderRunAt);
+    worker.tick('videoQueueTick'); await worker.settled();
+    assert.equal(count(worker, '/claim'), 1); assert.equal(generated(worker), 0);
+  } finally { worker.restore(); }
+});
+
+test('restart immediately after a fresh image preserves a completion gap before its video', async (t) => {
+  pacingClock(t);
+  const model = FALLBACK_VIDEO_MODELS.find((entry) => entry.mode === 'image');
+  const worker = await boot({ sync: pacedSync(), local: { nextVideoProviderRunAt: Date.now() - 1,
+    videoQueue: [pacedRow('image-checkpoint', { status: 'running', phase: 'prepared', videoMode: 'image', videoSource: 'generate',
+      videoModelKey: model.key, videoModelLabel: model.label, durationSec: model.durationSec,
+      startMediaId: 'saved-start-image', pendingGenerationPauseMs: 7000 })] } });
+  try {
+    await worker.settled();
+    assert.equal(queueItem(worker).status, 'pending');
+    assert.equal(worker.local.nextVideoProviderRunAt, Date.now() + 7000);
+    assert.equal(queueItem(worker).pendingGenerationPauseMs, undefined);
+    assert.equal(generated(worker), 0);
+    assert.equal(worker.provider.length, 0);
+  } finally { worker.restore(); }
+});
+
+test('a cooldown appearing during model preflight stops the actual generation boundary', async (t) => {
+  pacingClock(t);
+  const worker = await boot({ sync: pacedSync(), local: { videoQueue: [pacedRow()] }, onFlow(op, local) {
+    if (op === 'listVideoModels') local.videoProviderCooldownUntil = Date.now() + 60000;
+  } });
+  try {
+    await worker.settled();
+    assert.equal(generated(worker), 0);
+    assert.equal(queueItem(worker).status, 'pending');
+    assert.equal(worker.local.videoQueuePaused, true);
+    assert.equal(worker.local.nextVideoProviderRunAt, undefined);
+  } finally { worker.restore(); }
+});
+
+test('restart between completion and finally retains the sampled gap before another job', async (t) => {
+  pacingClock(t);
+  const worker = await boot({ sync: pacedSync(), local: { nextVideoProviderRunAt: Date.now() - 1,
+    videoQueue: [pacedRow('completed', { status: 'done', phase: 'done', videoMediaId: 'completed-video', pendingGenerationPauseMs: 9500 }), pacedRow('next')] } });
+  try {
+    await worker.settled();
+    assert.equal(worker.local.nextVideoProviderRunAt, Date.now() + 9500);
+    assert.equal(queueItem(worker).pendingGenerationPauseMs, undefined);
+    assert.equal(worker.local.videoQueue[1].status, 'pending');
+    assert.equal(generated(worker), 0);
+  } finally { worker.restore(); }
+});
+
+for (const phase of ['image_submitting', 'submitting']) {
+  test(`restart during ${phase} pauses subsequent jobs instead of treating elapsed pacing as clearance`, async (t) => {
+    pacingClock(t);
+    const worker = await boot({ sync: pacedSync(), local: { nextVideoProviderRunAt: Date.now() - 1,
+      videoQueue: [pacedRow('unknown', { status: 'running', phase, pendingGenerationPauseMs: 5000 }), pacedRow('next')] } });
+    try {
+      await worker.settled();
+      assert.equal(queueItem(worker).status, 'ambiguous');
+      assert.equal(worker.local.videoQueuePaused, true);
+      assert.equal(worker.local.videoQueue[1].status, 'pending');
+      assert.equal(worker.provider.length, 0);
+    } finally { worker.restore(); }
+  });
+}
+
+test('fresh-image reply without a media id stays held and never submits its video', async (t) => {
+  pacingClock(t);
+  const model = FALLBACK_VIDEO_MODELS.find((entry) => entry.mode === 'image');
+  const worker = await boot({ sync: pacedSync(), local: { videoQueue: [pacedRow('unknown-image', {
+    videoMode: 'image', videoSource: 'generate', videoModelKey: model.key, videoModelLabel: model.label, durationSec: model.durationSec,
+  })] }, flowReplies: { generateImage: {} } });
+  try {
+    await waitFor(() => queueItem(worker)?.status === 'ambiguous'); await worker.settled();
+    assert.equal(queueItem(worker).ambiguityKind, 'image');
+    assert.equal(worker.local.videoQueuePaused, true);
+    assert.equal(generated(worker), 0);
+    assert.equal(worker.provider.filter(({ op }) => op === 'generateImage').length, 1);
+  } finally { worker.restore(); }
+});
+
+test('configured shared identity is local telemetry; readiness and credits stay unknown', async () => {
+  const worker = await boot({ sync: pacedSync('gateway', { providerAccountProfileId: 'shared-account-profile' }) });
+  try {
+    const response = await worker.send({ type: 'getQueue' });
+    assert.deepEqual(response.manager.account, { profileId: 'shared-account-profile', identitySource: 'configured',
+      ready: null, creditBalance: null, creditResetAt: null });
+    assert.deepEqual(response.manager.pacing, { minimumSec: 5, maximumSec: 15, nextGenerationAt: 0, cooldownUntil: 0 });
+    assert.equal(response.manager.inventory, null);
+    assert.equal(worker.calls.length, 0);
+  } finally { worker.restore(); }
+});

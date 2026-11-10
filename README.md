@@ -102,6 +102,37 @@ immutable job binding, unknown-field round-trip and unsupported/refusal reportin
 No new wire schema or model/duration IDs are inferred here. Current video request
 capture and live acceptance remain missing and owned by Stack.
 
+## Account labels and generation pacing
+
+Settings and the side panel edit the same saved pause range (0–3600 seconds).
+New settings default to a random whole-second 5–15-second pause; existing custom
+ranges, including 0–0, are retained. The first generation starts without a pause.
+The worker saves its sampled pause before each actual image/video submission and
+retains it through recovery, then starts the gap when that work finishes. A freshly
+generated start image also pauses before its video; it is not generated again.
+Future deadlines survive MV3 restarts and wake through Chrome alarms. Alarm timing
+is earliest eligibility, not a promise of an exact start time. Provider cooldowns
+remain separate, including manual review holds. Known-media polling and saved-result
+delivery bypass new-generation waits and do not create an unrelated new pause.
+Gateway checks eligibility before claiming; uncertain paid work remains held.
+
+The optional shared account profile ID is a configured label: use one ID for the
+same image/video browser account/profile. Local `getQueue` telemetry returns
+`manager.account` (`profileId`, `identitySource`, and unknown `ready`, `creditBalance`,
+`creditResetAt`), `manager.pacing` (`minimumSec`, `maximumSec`, `nextGenerationAt`,
+`cooldownUntil`, timestamps in epoch milliseconds), and observed `manager.inventory`.
+No account readiness, credit balance or reset time is inferred from a label.
+
+These local fields are not a new Gateway wire contract. Relay/Gateway still need
+to agree the account/profile namespace and verified worker binding; account-wide
+claim eligibility and atomic reservation across image/video workers; pause policy
+and next-eligible/cooldown timestamps; unknown-paid-outcome holds and recovery; and
+observed credit value/unit, account scope, observation source/time and reset evidence.
+Balances must be counted once per verified account, never summed per extension.
+Until that contract is implemented, pacing and identity are local to this extension;
+they do not coordinate another extension or prove a shared browser sign-in. No
+Gateway authentication, authority, job schema or paid replay policy is changed.
+
 ## Install
 
 1. Open `chrome://extensions` and enable **Developer mode**.

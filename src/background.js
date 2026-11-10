@@ -126,6 +126,25 @@ function fleetRevision(queue, paused, cooldownUntil) {
   return hash >>> 0;
 }
 
+async function workerManagerTelemetry() {
+  const [settings, stored] = await Promise.all([
+    getSettings(), chrome.storage.local.get([NEXT_RUN_KEY, COOLDOWN_KEY, FLOW_MODEL_INVENTORY_KEY]),
+  ]);
+  return {
+    account: {
+      profileId: settings.providerAccountProfileId || null,
+      identitySource: settings.providerAccountProfileId ? 'configured' : 'unknown',
+      ready: null, creditBalance: null, creditResetAt: null,
+    },
+    pacing: {
+      minimumSec: settings.humanDelayMinSec, maximumSec: settings.humanDelayMaxSec,
+      nextGenerationAt: Number(stored[NEXT_RUN_KEY]) || 0,
+      cooldownUntil: Number(stored[COOLDOWN_KEY]) || 0,
+    },
+    inventory: stored[FLOW_MODEL_INVENTORY_KEY] || null,
+  };
+}
+
 async function fleetQueueState() {
   const [queue, paused, stored, hubPause] = await Promise.all([
     getQueue(),
@@ -455,6 +474,7 @@ async function gatewayTick() {
     if ((await chrome.storage.local.get(GATEWAY_CLAIM_KEY))[GATEWAY_CLAIM_KEY]) {
       throw new Error('A Gateway claim has an uncertain outcome; review is required before claiming again.');
     }
+    if (await holdForCooldown(initial, { label: 'Gateway video' }) || await waitForPacing(initial, { label: 'Gateway video' })) return null;
     const { settings } = await connectGateway();
     const tabs = await chrome.tabs.query({ url: flowWorkspace(settings).match });
     if (!tabs.some((tab) => tab.status === 'complete')) {
@@ -464,6 +484,7 @@ async function gatewayTick() {
     const binding = await gatewayBinding(settings);
     const current = await gatewaySettings();
     if (current.mode !== 'gateway' || await isPaused() || processing || await gatewayBinding(current) !== binding) return null;
+    if (await holdForCooldown(current, { label: 'Gateway video' }) || await waitForPacing(current, { label: 'Gateway video' })) return null;
     const claimId = createRandomId();
     await chrome.storage.local.set({ [GATEWAY_CLAIM_KEY]: { binding, claimId, at: Date.now() } });
     const job = await claimGatewayJob(settings);
@@ -633,20 +654,36 @@ function bufferToBase64(buffer) {
 }
 
 async function waitForPacing(settings, item) {
-  for (;;) {
-    const nextRunAt = Number((await chrome.storage.local.get(NEXT_RUN_KEY))[NEXT_RUN_KEY]) || 0;
-    const remaining = nextRunAt - Date.now();
-    if (remaining <= 0) return;
-    await writeStatus(`Waiting before ${item.label}…`, 'info', { countdownUntil: nextRunAt });
-    await sleep(Math.min(remaining, 10000));
+  if (settings.humanDelayMaxSec === 0) {
+    await chrome.storage.local.remove(NEXT_RUN_KEY);
+    return false;
   }
+  const nextRunAt = Number((await chrome.storage.local.get(NEXT_RUN_KEY))[NEXT_RUN_KEY]) || 0;
+  if (nextRunAt <= Date.now()) return false;
+  await writeStatus(`Waiting before ${item.label}…`, 'info', { countdownUntil: nextRunAt, countdownReason: 'pacing' });
+  chrome.alarms?.create(ALARM, { when: nextRunAt });
+  return true;
 }
 
-async function setNextRun(settings) {
-  const minimum = Math.max(0, Number(settings.humanDelayMinSec) || 0);
-  const maximum = Math.max(minimum, Number(settings.humanDelayMaxSec) || 0);
-  const seconds = minimum + Math.floor(Math.random() * (maximum - minimum + 1));
-  await chrome.storage.local.set({ [NEXT_RUN_KEY]: Date.now() + seconds * 1000 });
+async function setNextRun(settings, pauseMs) {
+  if (pauseMs === undefined) {
+    const minimum = settings.humanDelayMinSec;
+    const maximum = settings.humanDelayMaxSec;
+    pauseMs = (minimum + Math.floor(Math.random() * (maximum - minimum + 1))) * 1000;
+  }
+  await chrome.storage.local.set({ [NEXT_RUN_KEY]: Date.now() + pauseMs });
+  return pauseMs;
+}
+
+async function generationBoundary(item) {
+  const settings = await getSettings();
+  if (await holdForCooldown(settings, item) || await waitForPacing(settings, item)) {
+    throw Object.assign(new Error('The next generation is waiting for its saved pause.'), { code: 'VIDEO_PACING_WAIT' });
+  }
+  // Persist before the paid request so a worker restart cannot erase the pause.
+  const pauseMs = await setNextRun(settings);
+  await patchItem(item.id, { pendingGenerationPauseMs: pauseMs });
+  return pauseMs;
 }
 
 function isTemporaryLimit(error) {
@@ -663,8 +700,9 @@ async function holdForCooldown(settings, item) {
     return false;
   }
   if (!settings.providerCooldown.autoResume) {
-    await chrome.storage.local.remove(COOLDOWN_KEY);
-    return false;
+    await chrome.storage.local.set({ [PAUSED_KEY]: true });
+    await writeStatus('Generation service cooldown is active; queue paused for review.', 'info', { countdownUntil: Number(resumeAt), countdownReason: 'cooldown' });
+    return true;
   }
   await writeStatus('Generation service cooldown; the queue will resume automatically.', 'info', {
     countdownUntil: Number(resumeAt),
@@ -713,7 +751,7 @@ async function generateAndSave(item, settings, tab) {
     await patchItem(item.id, { videoModelBinding: item.videoModelBinding });
   }
 
-  if (mode === 'image' && !item.startMediaId) {
+  if (!item.videoMediaId && mode === 'image' && !item.startMediaId) {
     await patchItem(item.id, { phase: 'preparing' });
     if (item.gatewayJobId) {
       await assertGatewayConnection(item);
@@ -732,6 +770,7 @@ async function generateAndSave(item, settings, tab) {
       }
       await patchItem(item.id, { startMediaId: item.startMediaId, phase: 'prepared' });
     } else if (item.videoSource === 'generate') {
+      const imagePauseMs = await generationBoundary(item);
       await patchItem(item.id, { phase: 'image_submitting', imageSubmissionStartedAt: Date.now() });
       await writeStatus(`${item.label}: generating a start image…`, 'running');
       const generated = await runFlow(tab.id, 'generateImage', {
@@ -741,8 +780,12 @@ async function generateAndSave(item, settings, tab) {
         aspectRatio: item.aspectRatio,
         recaptchaMaxAttempts: 4,
       });
+      if (typeof generated?.mediaId !== 'string' || !generated.mediaId.trim()) {
+        throw new Error('Fresh-image generation returned no media id; its paid outcome remains unknown.');
+      }
       item.startMediaId = generated.mediaId;
       await patchItem(item.id, { startMediaId: item.startMediaId, phase: 'prepared' });
+      await setNextRun(settings, imagePauseMs);
     } else {
       await writeStatus(`${item.label}: uploading the scene image…`, 'running');
       const image = await studio.sceneImageBase64(item.slug, item.episodeCode, item.sceneId);
@@ -761,6 +804,7 @@ async function generateAndSave(item, settings, tab) {
     // Persist BEFORE the paid request. If the worker dies before receiving the
     // media id, startup quarantines this item instead of charging again.
     if (item.gatewayJobId) await assertGatewayConnection(item);
+    await generationBoundary(item);
     await patchItem(item.id, { phase: 'submitting', submissionStartedAt: Date.now() });
     await writeStatus(`${item.label}: submitting paid video generation…`, 'running');
     if (item.gatewayJobId) await assertGatewayConnection(item);
@@ -948,15 +992,24 @@ async function processQueue() {
       if (!pending) break;
       const settings = await getSettings();
       if (pending.gatewayJobId && settings.mode !== 'gateway') break;
-      if (await holdForCooldown(settings, pending)) break;
-      await waitForPacing(settings, pending);
+      if (pending.startMediaId && !pending.videoMediaId && pending.phase === 'prepared' && Number.isFinite(pending.pendingGenerationPauseMs)) {
+        await setNextRun(settings, pending.pendingGenerationPauseMs);
+        await patchItem(pending.id, { pendingGenerationPauseMs: undefined });
+      }
+      if (!pending.videoMediaId && pending.phase !== 'delivery_pending' &&
+          (await holdForCooldown(settings, pending) || await waitForPacing(settings, pending))) {
+        if (pending.gatewayJobId) {
+          await patchItem(pending.id, { status: 'failed', error: 'Eligibility changed after claim; Gateway work is held for review.' });
+          await chrome.storage.local.set({ [PAUSED_KEY]: true });
+        }
+        break;
+      }
       if (await isPaused()) break;
       const current = await patchItem(pending.id, {
         status: 'running',
         startedAt: pending.startedAt || Date.now(),
       });
       if (!current) continue;
-      let providerAttempted = false;
       try {
         let artifact;
         if (current.gatewayJobId) {
@@ -969,7 +1022,6 @@ async function processQueue() {
           savedAs = await deliverGatewayArtifact(current, artifact);
         } else {
           const tab = await ensureFlowTab();
-          providerAttempted = true;
           savedAs = await generateAndSave(current, settings, tab);
         }
         await patchItem(current.id, {
@@ -980,6 +1032,11 @@ async function processQueue() {
           error: undefined,
         });
       } catch (error) {
+        if (error.code === 'VIDEO_PACING_WAIT') {
+          await patchItem(current.id, { status: current.gatewayJobId ? 'failed' : 'pending', error: current.gatewayJobId ? 'Pacing changed after claim; Gateway work is held for review.' : undefined });
+          if (current.gatewayJobId) await chrome.storage.local.set({ [PAUSED_KEY]: true });
+          break;
+        }
         const latest = (await getQueue()).find((item) => item.id === current.id) || current;
         const recovery = classifyInterruptedItem(latest);
         if (current.gatewayJobId) {
@@ -1043,11 +1100,19 @@ async function processQueue() {
           finishedAt: Date.now(),
         });
       } finally {
-        if (providerAttempted) await setNextRun(settings);
+        const latest = (await getQueue()).find((item) => item.id === current.id);
+        if (Number.isFinite(latest?.pendingGenerationPauseMs)) {
+          await setNextRun(settings, latest.pendingGenerationPauseMs);
+          await patchItem(current.id, { pendingGenerationPauseMs: undefined });
+        }
       }
     }
     const queue = await getQueue();
-    if (!queue.some((item) => ['pending', 'running'].includes(item.status))) clearAlarm();
+    if (!queue.some((item) => ['pending', 'running'].includes(item.status))) {
+      const nextRunAt = Number((await chrome.storage.local.get(NEXT_RUN_KEY))[NEXT_RUN_KEY]) || 0;
+      if (nextRunAt > Date.now()) chrome.alarms?.create(ALARM, { when: nextRunAt });
+      else clearAlarm();
+    }
   } finally {
     processing = false;
   }
@@ -1099,6 +1164,11 @@ async function recoverInterruptedJobs() {
   const queue = await getQueue();
   let changed = false;
   for (const item of queue) {
+    if (item.status === 'done' && Number.isFinite(item.pendingGenerationPauseMs)) {
+      await setNextRun(await getSettings(), item.pendingGenerationPauseMs);
+      delete item.pendingGenerationPauseMs;
+      changed = true;
+    }
     if (item.gatewayJobId && item.gatewaySettled) {
       await settleGatewayClaim(item);
       await deleteGatewayArtifact(artifactKey(item));
@@ -1115,6 +1185,7 @@ async function recoverInterruptedJobs() {
     }
   }
   if (changed) await setQueue(queue);
+  if (queue.some((item) => item.status === 'ambiguous')) await chrome.storage.local.set({ [PAUSED_KEY]: true });
   if (queue.some((item) => item.status === 'pending')) createAlarm();
 }
 
@@ -1126,11 +1197,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   switch (message?.type) {
     case 'getQueue':
       reply(
-        Promise.all([getQueue(), isPaused(), chrome.storage.local.get(COOLDOWN_KEY)]).then(([queue, paused, stored]) => ({
+        Promise.all([getQueue(), isPaused(), chrome.storage.local.get(COOLDOWN_KEY), workerManagerTelemetry()]).then(([queue, paused, stored, manager]) => ({
           ok: true,
           queue,
           paused,
           cooldownUntil: Number(stored[COOLDOWN_KEY]) || 0,
+          manager,
         }))
       );
       return true;
@@ -1203,7 +1275,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 });
 
 chrome.alarms?.onAlarm?.addListener((alarm) => {
-  if (alarm.name === ALARM) processQueue();
+  if (alarm.name === ALARM) processQueue().then(() => gatewayTick()).catch(() => {});
   if (alarm.name === GATEWAY_ALARM) gatewayTick().catch(() => {});
   if (alarm.name === FLEET_ALARM) {
     sendFleetHeartbeat().catch(async (error) => {

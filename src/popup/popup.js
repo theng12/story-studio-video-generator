@@ -751,7 +751,7 @@ async function pollQueue() {
 const HUMAN_PACE_PRESETS = {
   off: { min: 0, max: 0 },
   quick: { min: 2, max: 5 },
-  balanced: { min: 5, max: 12 },
+  balanced: { min: 5, max: 15 },
   cautious: { min: 15, max: 40 },
 };
 const COOLDOWN_PRESETS = [15, 30, 60, 240, 1440];

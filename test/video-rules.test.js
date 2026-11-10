@@ -19,6 +19,14 @@ test('migrates persistent legacy queue items without replaying uncertain work', 
   const { queue } = migrateStoredQueue([{ id: 'known', status: 'running', phase: 'submitting', videoMediaId: 'video/1', videoModel: 'unknown', workflowId: 'dead' }, { id: 'uncertain', status: 'running', phase: 'submitting', videoModel: 'veo-3.1-fast' }, { id: 'legacy', status: 'pending', phase: 'queued', videoModel: 'veo-3.1-fast', videoProvider: 'workspace' }, { id: 'unknown', status: 'pending', phase: 'queued', videoModel: 'unmapped' }]);
   assert.equal(queue[0].videoMediaId, 'video/1'); assert.equal(queue[0].workflowId, undefined); assert.equal(queue[1].status, 'ambiguous'); assert.equal(queue[2].status, 'failed'); assert.equal(queue[2].videoModelKey, undefined); assert.equal(queue[3].status, 'failed');
 });
+test('modern unknown submission migration is persisted once and then stable', () => {
+  const first = migrateStoredQueue([{ id: 'modern', videoMode: 'text', videoModelKey: 'current', status: 'running', phase: 'submitting' }]);
+  assert.equal(first.changed, true);
+  assert.equal(first.queue[0].status, 'ambiguous');
+  assert.equal(first.queue[0].ambiguityKind, 'video');
+  assert.equal(migrateStoredQueue(first.queue).changed, false);
+});
+
 test('deduplicates only active equivalent work including generation settings', () => {
   const item = { slug: 'p', episodeCode: 'E1', sceneId: 's1', videoMode: 'image', videoModelKey: 'veo_x', aspectRatio: '16:9', videoSource: 'existing' };
   assert.equal(hasActiveDuplicate([{ ...item, status: 'pending' }], item), true); assert.equal(hasActiveDuplicate([{ ...item, status: 'done' }], item), false); assert.equal(hasActiveDuplicate([{ ...item, status: 'running', videoModelKey: 'veo_y' }], item), false); assert.equal(hasActiveDuplicate([{ ...item, status: 'pending', videoMode: 'text' }], item), false);

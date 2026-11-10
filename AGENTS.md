@@ -34,6 +34,13 @@ panel. Preserve Story Studio clip ingestion and Downloads naming.
   historical fallback source are observations only. Zero current video request
   captures means no current video transport is proven. Keep unknown paid outcomes
   held; retained media/results must never be regenerated for delivery retry.
+- Keep image/video account identity and observed credits scoped to one verified
+  account/profile, never one balance per extension. Configured labels are not
+  readiness or credit evidence. Account-wide claim/pacing coordination needs an
+  agreed manager/Gateway contract; local storage is not shared across extensions.
+- Verify default inter-generation 5–15s pacing, saved custom/zero overrides, MV3
+  restart deadlines, fresh-image-to-video gaps, eligibility before claims, manual
+  cooldown holds and unknown-paid-outcome refusal with offline platform fixtures.
 - Record offline checks separately from live browser/provider evidence. Stack
   owns that browser/provider work; a source checkpoint does not authorize it.
 
