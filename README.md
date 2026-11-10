@@ -127,7 +127,8 @@ Gateway account-worker schema 1 now adds authenticated `/api/workers/telemetry`
 readback and `control` on health, telemetry and claim replies. Desired dispatch,
 close and pacing are saved locally; a revision is echoed only after actual dispatch
 and pacing readback matches. OFF survives restart and local Resume cannot override
-it. The manager's initial default range does not overwrite an existing custom range:
+it. A paired worker keeps reporting in Story and Standalone modes; only Gateway
+mode may claim jobs. The manager's initial default range does not overwrite an existing custom range:
 actual pacing is reported, dispatch stays off and the unmatched revision is not
 acknowledged until a subsequent explicit control matches or changes it. Unsupported
 ranges above this extension's displayed 3600-second limit are refused without ack.

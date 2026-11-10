@@ -541,10 +541,10 @@ async function gatewayTick() {
   try {
     await startupReady;
     const initial = await gatewaySettings();
-    if (initial.mode !== 'gateway' || !initial.gatewayUrl || !initial.gatewayToken) return null;
+    if (!initial.gatewayUrl || !initial.gatewayToken) return null;
     const { settings, health } = await connectGateway();
     await publishGatewayState(settings);
-    if (processing || await isPaused() || await managerDispatchPaused(await getSettings())) return null;
+    if ((await getSettings()).mode !== 'gateway' || processing || await isPaused() || await managerDispatchPaused(await getSettings())) return null;
     const queue = await getQueue();
     if (queue.some((item) => ['pending', 'running'].includes(item.status) || (item.gatewayJobId && !item.gatewaySettled))) return null;
     if ((await chrome.storage.local.get(GATEWAY_CLAIM_KEY))[GATEWAY_CLAIM_KEY]) {
@@ -621,7 +621,7 @@ async function gatewayTick() {
 async function syncGatewayAlarm() {
   try {
     const settings = await getSettings();
-    if (settings.mode === 'gateway') {
+    if (settings.mode === 'gateway' || await getGatewayToken()) {
       chrome.alarms?.create(GATEWAY_ALARM, { periodInMinutes: 0.5 });
       await gatewayTick().catch(() => {});
     } else {

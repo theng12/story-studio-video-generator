@@ -38,7 +38,9 @@ async function waitFor(predicate) {
 }
 async function boot({ local = {}, sync, rows = new Map(), mode = 'gateway', job = JOB, answers = [{ ok: true }], health = {}, failAnswer = { ok: true }, onClaim, onFlow, onTelemetry, claimReply, lostClaim = false, noTabs = false, storySave, assetReply, onTabs, flowReplies = {} } = {}) {
   sync ||= { videoSettings: { mode, gatewayUrl: 'http://127.0.0.1:49873', gatewayWorkerId: '', flowProjectId: PROJECT, humanDelayMinSec: 0, humanDelayMaxSec: 0, fleetEnabled: false } };
-  local.gatewayWorkerToken ??= 'fixture-token';
+  const configuredToken = local.gatewayWorkerToken ?? 'fixture-token';
+  // Isolate startup recovery from the explicit manager tick each test requests.
+  local.gatewayWorkerToken = '';
   const desiredMode = sync.videoSettings.mode;
   sync.videoSettings.mode = 'studio';
   const prior = Object.fromEntries(['chrome', 'fetch', 'indexedDB'].map((key) => [key, globalThis[key]]));
@@ -107,6 +109,7 @@ async function boot({ local = {}, sync, rows = new Map(), mode = 'gateway', job 
   };
   await import(`../src/background.js?video-runtime=${Date.now()}-${Math.random()}`);
   await pause(25);
+  local.gatewayWorkerToken = configuredToken;
   sync.videoSettings.mode = desiredMode;
   return { local, sync, rows, calls, provider, downloads, scheduled, control, account,
     send(message) { return new Promise((resolve) => listener(message, {}, resolve)); },
@@ -925,6 +928,22 @@ test('a reply from the previous token cannot apply control to a new connection',
     assert.equal(count(worker, '/claim'), 0); assert.equal(generated(worker), 0);
   } finally { worker.restore(); }
 });
+
+for (const mode of ['studio', 'standalone']) {
+  test(`paired ${mode} worker still acknowledges manager stop without claiming jobs`, async () => {
+    const worker = await boot({ mode, health: { control: { revision: 'stop-outside-gateway', dispatchEnabled: false,
+      closeRequested: true, pacing: { minSeconds: 0, maxSeconds: 0 } } } });
+    try {
+      await worker.send({ type: 'gatewayModeChanged' });
+      assert.ok(worker.scheduled.some((alarm) => alarm.name === 'gatewayWorkerTick'));
+      const state = lastTelemetry(worker).telemetry.state;
+      assert.equal(state.controlRevision, 'stop-outside-gateway');
+      assert.equal(state.paused, true); assert.equal(state.enabled, false); assert.equal(state.activity, 'idle');
+      assert.equal(count(worker, '/claim'), 0); assert.equal(worker.provider.length, 0);
+      assert.equal(Object.hasOwn(lastTelemetry(worker), 'safeToClose'), false);
+    } finally { worker.restore(); }
+  });
+}
 
 test('configured shared identity is local telemetry; readiness and credits stay unknown', async () => {
   const worker = await boot({ sync: pacedSync('gateway', { providerAccountProfileId: 'shared-account-profile' }) });
