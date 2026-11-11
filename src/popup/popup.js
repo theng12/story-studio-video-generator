@@ -1,11 +1,13 @@
-import { getSettings, saveSettings } from '../lib/config.js';
+import { getSettings, saveSettings, getGatewayToken, saveGatewayToken } from '../lib/config.js';
 import { StudioClient } from '../lib/story-studio.js';
 import { initTheme } from '../lib/theme.js';
 import { eligibleVideoScenes } from '../lib/video-rules.js';
+import { FALLBACK_VIDEO_MODELS, defaultVideoModel, modelsForMode } from '../lib/video-models.js';
 import { ambiguityRetryCopy, isCurrentLoad, sceneEnqueueContext } from '../lib/video-panel.js';
 
 const $ = (id) => document.getElementById(id);
 let settings;
+let gatewayToken = '';
 let studio;
 let projects = [];
 let episodes = [];
@@ -17,9 +19,11 @@ let modelInventorySource = 'fallback';
 let storyLoadToken = 0;
 
 function renderModelInventory(inventory) {
-  const models = Array.isArray(inventory?.models) ? inventory.models : [];
+  const mode = settings.videoMode === 'text' ? 'text' : 'image';
+  const models = modelsForMode(inventory?.models, mode);
   $('videoModel').replaceChildren(...models.map((model) => new Option(model.label, model.key)));
-  if (models.some((model) => model.key === settings.videoModelKey)) $('videoModel').value = settings.videoModelKey;
+  const selected = models.find((model) => model.key === settings.videoModelKey) || defaultVideoModel(mode);
+  $('videoModel').value = selected.key;
   modelInventorySource = inventory?.source === 'live' ? 'live' : 'fallback';
   $('modelInventoryState').textContent = modelInventorySource === 'live' ? 'Live from this Flow workspace' : 'Tested fallback catalog';
 }
@@ -112,21 +116,102 @@ function isStandaloneMode() {
   return settings?.mode === 'standalone';
 }
 
+function isGatewayMode() {
+  return settings?.mode === 'gateway';
+}
+
 let standalonePrompts = [];
+
+function renderGatewaySettings() {
+  if (!$('gatewayUrl')) return;
+  $('gatewayUrl').value = settings.gatewayUrl || '';
+  $('gatewayToken').value = gatewayToken || '';
+  $('gatewayWorker').textContent = settings.gatewayWorkerId
+    ? `Worker ${settings.gatewayWorkerId.slice(0, 22)}…`
+    : 'Worker id assigned on first claim';
+}
 
 function renderWorkingMode() {
   const standalone = isStandaloneMode();
-  $('workingMode').value = standalone ? 'standalone' : 'studio';
-  $('companionPane').hidden = standalone;
-  $('standalonePane').hidden = !standalone;
-  $('studioBatchActions').hidden = standalone;
-  $('videoSource').disabled = standalone;
-  $('videoSource').value = standalone ? 'generate' : settings.videoSource;
+  const gateway = isGatewayMode();
+  $('workingMode').value = gateway ? 'gateway' : standalone ? 'standalone' : 'studio';
+  $('companionPane').hidden = standalone || gateway;
+  $('standalonePane').hidden = !standalone || gateway;
+  $('gatewayPane').hidden = !gateway;
+  $('studioBatchActions').hidden = standalone || gateway;
+  const providerPanel = document.querySelector('.provider-settings-panel');
+  const workspacePanel = document.querySelector('.workspace-panel');
+  if (providerPanel) providerPanel.hidden = gateway;
+  if (workspacePanel) workspacePanel.hidden = gateway;
+  if (gateway) {
+    renderGatewaySettings();
+  } else {
+    $('videoSource').disabled = standalone;
+    $('videoSource').value = standalone ? 'generate' : settings.videoSource;
+  }
+}
+
+function renderVideoMode() {
+  const text = settings.videoMode === 'text';
+  $('videoMode').value = text ? 'text' : 'image';
+  $('videoSource').disabled = text || isStandaloneMode() || isGatewayMode();
+  if (!text) $('videoSource').value = isStandaloneMode() ? 'generate' : settings.videoSource;
+}
+
+async function changeVideoMode() {
+  const videoMode = $('videoMode').value === 'text' ? 'text' : 'image';
+  const model = defaultVideoModel(videoMode);
+  settings = await saveSettings({
+    videoMode,
+    videoModelKey: model.key,
+    videoModelLabel: model.label,
+    videoModelSource: 'fallback',
+  });
+  renderVideoMode();
+  await refreshModels();
+}
+
+async function saveGatewaySettings() {
+  settings = await saveSettings({
+    gatewayUrl: $('gatewayUrl').value.trim(),
+    gatewayWorkerId: settings.gatewayWorkerId,
+  });
+  await saveGatewayToken($('gatewayToken').value);
+  gatewayToken = await getGatewayToken();
+  await chrome.runtime.sendMessage({ type: 'gatewayModeChanged' }).catch(() => {});
+  renderGatewaySettings();
+}
+
+async function testGatewayConnection() {
+  await saveGatewaySettings();
+  setStatus('Testing Gateway Studio…');
+  const result = await chrome.runtime.sendMessage({ type: 'gatewayTest' });
+  if (!result?.ok) throw new Error(result?.error || 'Gateway Studio is unreachable.');
+  setStatus('Gateway Studio connected.', 'ok');
+}
+
+async function claimGatewayNow() {
+  await saveGatewaySettings();
+  await chrome.runtime.sendMessage({ type: 'gatewayClaimNow' });
+  await pollQueue();
+  setStatus('Checked Gateway Studio for work.', 'ok');
 }
 
 async function changeWorkingMode() {
-  settings = await saveSettings({ mode: $('workingMode').value });
+  const mode = ['studio', 'standalone', 'gateway'].includes($('workingMode').value)
+    ? $('workingMode').value
+    : 'studio';
+  settings = await saveSettings({ mode });
+  if (mode === 'gateway') {
+    await saveGatewaySettings();
+    renderWorkingMode();
+    renderVideoMode();
+    setStatus('Gateway Studio mode: the extension claims jobs from your gateway.', 'ok');
+    return;
+  }
+  await chrome.runtime.sendMessage({ type: 'gatewayModeChanged' }).catch(() => {});
   renderWorkingMode();
+  renderVideoMode();
   if (isStandaloneMode()) {
     setStatus('Standalone mode uses a local prompt and Downloads.', 'ok');
     return;
@@ -340,6 +425,7 @@ function confirmQueue() {
           ...context,
           projectId: settings.flowProjectId,
           ...modelSnapshot(),
+          videoMode: settings.videoMode,
           videoSource: settings.videoSource,
           aspectRatio: settings.aspectRatio,
         },
@@ -396,6 +482,7 @@ function confirmStandalone() {
           prompts: standalonePrompts,
           projectId: settings.flowProjectId,
           ...modelSnapshot(),
+          videoMode: settings.videoMode,
           aspectRatio: settings.aspectRatio,
         },
       });
@@ -817,11 +904,18 @@ async function init() {
   $('extensionVersion').textContent = `v${manifest.version}`;
 
   settings = await getSettings();
+  gatewayToken = await getGatewayToken();
   studio = new StudioClient(settings.studioBaseUrl);
-  await refreshModels();
+  // A failed inventory refresh must not abort init: everything below wires the
+  // controls, so throwing here leaves the whole side panel inert.
+  await refreshModels().catch((error) => {
+    renderModelInventory({ source: 'fallback', models: FALLBACK_VIDEO_MODELS });
+    setStatus(publicMessage(error.message), 'failed');
+  });
   $('videoSource').value = settings.videoSource;
   $('aspectRatio').value = settings.aspectRatio;
   renderWorkingMode();
+  renderVideoMode();
   renderWorkspace();
   renderHumanPace();
   renderCooldownCard();
@@ -832,6 +926,9 @@ async function init() {
   $('testConn').addEventListener('click', testStudioConnection);
   $('workingMode').addEventListener('change', () => {
     changeWorkingMode().catch((error) => setStatus(publicMessage(error.message), 'failed'));
+  });
+  $('videoMode').addEventListener('change', () => {
+    changeVideoMode().catch((error) => setStatus(publicMessage(error.message), 'failed'));
   });
   $('project').addEventListener('change', () => {
     loadEpisodes().catch((error) => setStatus(publicMessage(error.message), 'failed'));
@@ -857,6 +954,17 @@ async function init() {
     if (event.target === $('confirm')) closeConfirmation();
   });
   $('openFlow').addEventListener('click', () => chrome.runtime.sendMessage({ type: 'openFlow' }));
+  $('gatewayConnect')?.addEventListener('click', () => {
+    testGatewayConnection().catch((error) => setStatus(publicMessage(error.message), 'failed'));
+  });
+  $('gatewayClaim')?.addEventListener('click', () => {
+    claimGatewayNow().catch((error) => setStatus(publicMessage(error.message), 'failed'));
+  });
+  for (const id of ['gatewayUrl', 'gatewayToken']) {
+    $(id)?.addEventListener('change', () => {
+      saveGatewaySettings().catch((error) => setStatus(publicMessage(error.message), 'failed'));
+    });
+  }
   $('useFlow').addEventListener('click', () => {
     useCurrentWorkspace().catch((error) => setStatus(publicMessage(error.message), 'failed'));
   });
@@ -920,7 +1028,7 @@ async function init() {
     saveCooldownCustom().catch((error) => setStatus(publicMessage(error.message), 'failed'));
   });
 
-  if (!isStandaloneMode()) {
+  if (!isStandaloneMode() && !isGatewayMode()) {
     await loadProjects().catch((error) => setStatus(`Story Studio: ${publicMessage(error.message)}`, 'failed'));
   }
   await pollQueue();

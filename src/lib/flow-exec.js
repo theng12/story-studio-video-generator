@@ -1,14 +1,26 @@
 // One-shot Google Flow MAIN-world command.
 //
-// This function is passed directly to chrome.scripting.executeScript. Keep every
-// dependency inside the function: Chrome serializes the function body and does
-// not preserve module closures. Unlike the old window.postMessage bridge, this
-// exposes no long-lived page-callable command listener and does not broadcast
-// prompts, media bytes, or command results to page scripts.
+// Contract captured live 2026-11-09 on flow.google.com: every call is a
+// same-origin, cookie-authenticated POST to
+// /_/AiSandboxAngularFrontend/data/batchexecute carrying one RPC id, a
+// positional-array payload in f.req, and the page's anti-forgery token.
+// Text-to-video and image-to-video are separate RPCs with separate model keys.
+//
+// Keep every dependency inside the function: Chrome serializes the function
+// body and does not preserve module closures. Unlike the old window.postMessage
+// bridge, this exposes no long-lived page-callable command listener and does not
+// broadcast prompts, media bytes, or command results to page scripts.
 export async function flowCommand(command) {
   try {
-    const API = 'https://aisandbox-pa.googleapis.com/v1';
     const SITEKEY = '6LdsFiUsAAAAAIjVDZcuLhaHiDn5nnHVXVRQGeMV';
+    const RPC = {
+      generateImage: 'ogiZ0b',
+      uploadImage: 'maseQ',
+      textToVideo: 'YhhmEf',
+      imageToVideo: 'MZZa6b',
+      checkVideo: 'jwpduf',
+      getMedia: 'as29s',
+    };
     const IMAGE_MODELS = {
       'nano-banana-2': 'NARWHAL',
       'nano-banana-2-lite': 'HARBOR_SEAL',
@@ -17,17 +29,14 @@ export async function flowCommand(command) {
       HARBOR_SEAL: 'HARBOR_SEAL',
       GEM_PIX_2: 'GEM_PIX_2',
     };
-    const IMAGE_ASPECT = {
-      '16:9': 'IMAGE_ASPECT_RATIO_LANDSCAPE',
-      '9:16': 'IMAGE_ASPECT_RATIO_PORTRAIT',
-      '1:1': 'IMAGE_ASPECT_RATIO_SQUARE',
-      '4:3': 'IMAGE_ASPECT_RATIO_FULL',
-      '3:4': 'IMAGE_ASPECT_RATIO_PORTRAIT_FULL',
-    };
-    const VIDEO_ASPECT = {
-      '16:9': 'VIDEO_ASPECT_RATIO_LANDSCAPE',
-      '9:16': 'VIDEO_ASPECT_RATIO_PORTRAIT',
-    };
+    // Only 16:9 has been captured on the current app; refuse other shapes
+    // rather than guess an enum value.
+    const IMAGE_ASPECT = { '16:9': 3 };
+    const VIDEO_ASPECT = { '16:9': 2 };
+    // Video completion state inside the polled media object.
+    const VIDEO_STATUS_GENERATING = 2;
+    const VIDEO_STATUS_DONE = 3;
+    const EXACT_MODEL = /^[a-z0-9][a-z0-9_.-]{2,127}$/;
     const payload = command?.payload || {};
 
     const uuid = () =>
@@ -37,6 +46,7 @@ export async function flowCommand(command) {
             const r = (Math.random() * 16) | 0;
             return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
           });
+    const upperUuid = () => uuid().toUpperCase();
     const normalizeProjectId = (value) => {
       const raw = String(value || '').trim();
       const match = raw.match(
@@ -49,8 +59,7 @@ export async function flowCommand(command) {
       return match ? match[1] : '';
     };
     const projectIdFor = (value) => normalizeProjectId(value || currentProjectId());
-    const randomSeed = () => Math.floor(Math.random() * 1_000_000);
-    const sessionId = () => `;${Date.now()}`;
+    const randomSeed = () => Math.floor(Math.random() * 1_000_000_000);
     const bufToBase64 = (buffer) => {
       const bytes = new Uint8Array(buffer);
       let binary = '';
@@ -59,17 +68,12 @@ export async function flowCommand(command) {
       }
       return btoa(binary);
     };
-    const accessToken = async () => {
-      const response = await fetch('/fx/api/auth/session', {
-        credentials: 'include',
-        headers: { Accept: 'application/json' },
-      });
-      if (!response.ok) {
-        throw new Error(`Not signed in to Flow (session ${response.status}). Open labs.google/fx and sign in.`);
-      }
-      const json = await response.json();
-      if (!json?.access_token) throw new Error('Flow session has no access_token — sign in again.');
-      return json.access_token;
+    // The page's anti-forgery + session values. They exist only on a signed-in
+    // app page, which is exactly the "are we signed in" signal.
+    const wiz = () => {
+      const data = window.WIZ_global_data || {};
+      if (!data.SNlM0e) throw new Error('Not signed in to Flow, or this is not the Flow app page. Open a Flow project and sign in.');
+      return { at: data.SNlM0e, sid: data.FdrFJe || '', bl: data.cfb2h || '' };
     };
     const mintToken = async (action) => {
       const enterprise = window.grecaptcha?.enterprise;
@@ -82,17 +86,58 @@ export async function flowCommand(command) {
         }
       });
     };
-    const recaptchaContext = (token) => ({
-      token,
-      applicationType: 'RECAPTCHA_APPLICATION_TYPE_WEB',
-    });
-    const errorDetail = async (response) => {
-      try {
-        const json = await response.json();
-        return json?.error?.message || String(response.status);
-      } catch {
-        return String(response.status);
+    const clientContext = (projectId, token) =>
+      [null, 22, null, null, null, projectId, null, null, null, null, [token, 1]];
+    const textInput = (prompt) => [null, null, [[[String(prompt)]]]];
+    // Parse a batchexecute body: ")]}'" then length-prefixed JSON chunks; the
+    // answer is the ["wrb.fr", rpcId, <json string>] row.
+    const parseRpc = (text, rpcId) => {
+      const rows = [];
+      for (const line of String(text).replace(/^\)\]\}'/, '').split('\n')) {
+        if (!line.startsWith('[')) continue;
+        try { rows.push(...JSON.parse(line)); } catch { /* length prefix or partial */ }
       }
+      const row = rows.find((entry) => Array.isArray(entry) && entry[0] === 'wrb.fr' && entry[1] === rpcId);
+      if (!row) throw new Error(`Flow returned no ${rpcId} result.`);
+      if (typeof row[2] !== 'string') {
+        const code = Array.isArray(row[5]) ? row[5][0] : null;
+        throw Object.assign(new Error(`Flow rejected ${rpcId}${code != null ? ` (error ${code})` : ''}.`), { flowErrorCode: code });
+      }
+      return JSON.parse(row[2]);
+    };
+    const rpc = async (rpcId, args, projectId) => {
+      const { at, sid, bl } = wiz();
+      const query = new URLSearchParams({
+        rpcids: rpcId,
+        'source-path': projectId ? `/project/${projectId}` : '/',
+        bl,
+        'f.sid': sid,
+        hl: 'en',
+        _reqid: String(Math.floor(Math.random() * 900000) + 100000),
+        rt: 'c',
+      });
+      const body = new URLSearchParams({
+        'f.req': JSON.stringify([[[rpcId, JSON.stringify(args), null, 'generic']]]),
+        at,
+      });
+      const response = await fetch(`/_/AiSandboxAngularFrontend/data/batchexecute?${query}`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'X-Same-Domain': '1', 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+        body: body.toString(),
+      });
+      const text = await response.text();
+      if (!response.ok) throw Object.assign(new Error(`Flow ${rpcId} failed (${response.status}).`), { status: response.status });
+      return parseRpc(text, rpcId);
+    };
+    const findImageUrl = (value) => {
+      if (typeof value === 'string') return value.startsWith('https://flow-content.google/image/') ? value : null;
+      if (!Array.isArray(value)) return null;
+      for (const entry of value) {
+        const found = findImageUrl(entry);
+        if (found) return found;
+      }
+      return null;
     };
     const downloadImage = async (value) => {
       const url = new URL(String(value || ''));
@@ -111,231 +156,198 @@ export async function flowCommand(command) {
       if (buffer.byteLength > 50 * 1024 * 1024) throw new Error('Downloaded image exceeded 50 MB.');
       return { base64: bufToBase64(buffer), mime: contentType || 'image/png' };
     };
+
     const generateImage = async () => {
       const projectId = projectIdFor(payload.projectId);
       if (!projectId) throw new Error('No Flow project selected.');
       if (!String(payload.prompt || '').trim()) throw new Error('Empty image prompt.');
-      const model = IMAGE_MODELS[payload.model] || 'NARWHAL';
-      const aspect = IMAGE_ASPECT[payload.aspectRatio] || 'IMAGE_ASPECT_RATIO_LANDSCAPE';
+      const modelId = IMAGE_MODELS[payload.model] || payload.model;
+      if (!modelId) throw new Error('Flow image model is malformed.');
+      const aspect = IMAGE_ASPECT[payload.aspectRatio || '16:9'];
+      if (!aspect) throw new Error(`Flow image aspect ratio ${payload.aspectRatio} is not mapped yet — use 16:9.`);
       const seed = Number.isFinite(payload.seed) ? payload.seed : randomSeed();
       const maxAttempts = Math.min(10, Math.max(1, Math.round(Number(payload.recaptchaMaxAttempts) || 4)));
-      let json;
+      wiz();
+      let result;
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         const token = await mintToken('IMAGE_GENERATION');
-        const clientContext = {
-          recaptchaContext: recaptchaContext(token),
-          projectId,
-          tool: 'PINHOLE',
-          sessionId: sessionId(),
-        };
-        const response = await fetch(
-          `${API}/projects/${encodeURIComponent(projectId)}/flowMedia:batchGenerateImages`,
-          {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${await accessToken()}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              clientContext,
-              mediaGenerationContext: { batchId: uuid() },
-              useNewMedia: true,
-              requests: [
-                {
-                  clientContext,
-                  imageModelName: model,
-                  imageAspectRatio: aspect,
-                  structuredPrompt: { parts: [{ text: payload.prompt }] },
-                  seed,
-                  imageInputs: Array.isArray(payload.imageInputs) ? payload.imageInputs : [],
-                },
-              ],
-            }),
-          }
-        );
-        if (response.ok) {
-          json = await response.json();
+        const context = clientContext(projectId, token);
+        const request = [
+          null,
+          [[
+            null,
+            null,
+            null,
+            seed,
+            aspect,
+            modelId,
+            null,
+            context,
+            [[[payload.prompt]]],
+            null,
+            null,
+            null,
+            upperUuid(),
+            upperUuid(),
+          ]],
+          1,
+          context,
+          [upperUuid()],
+        ];
+        try {
+          result = await rpc(RPC.generateImage, request, projectId);
           break;
+        } catch (error) {
+          const detail = String(error?.message || error);
+          const recaptchaFailure =
+            error?.status === 403 || /recaptcha|captcha|evaluation failed/i.test(detail);
+          if (recaptchaFailure && attempt < maxAttempts) {
+            await new Promise((resolve) => setTimeout(resolve, 1200 * attempt));
+            continue;
+          }
+          if (recaptchaFailure) {
+            throw new Error(`Flow reCAPTCHA failed after ${attempt} fresh-token attempts: ${detail}`);
+          }
+          throw new Error(`Flow image generation failed: ${detail}`);
         }
-        const detail = await errorDetail(response);
-        const recaptchaFailure =
-          response.status === 403 || /recaptcha|captcha|evaluation failed/i.test(detail);
-        if (recaptchaFailure && attempt < maxAttempts) {
-          await new Promise((resolve) => setTimeout(resolve, 1200 * attempt));
-          continue;
-        }
-        if (recaptchaFailure) {
-          throw new Error(
-            `Flow reCAPTCHA failed after ${attempt} fresh-token attempts (${response.status}): ${detail}`
-          );
-        }
-        throw new Error(`Flow image generation failed (${response.status}): ${detail}`);
       }
-      const generated = json?.media?.[0]?.image?.generatedImage;
-      if (!generated?.fifeUrl) throw new Error('Flow returned no image URL.');
-      const image = await downloadImage(generated.fifeUrl);
+      const media = result?.[0]?.[0];
+      const imageUrl = findImageUrl(media);
+      if (!imageUrl) throw new Error('Flow returned no image URL.');
+      const image = await downloadImage(imageUrl);
+      const dims = Array.isArray(media?.[8]) ? media[8] : [];
       return {
         ...image,
-        mediaId: generated.mediaId || json.media[0].name,
-        seed: generated.seed ?? seed,
-        width: json.media[0]?.image?.dimensions?.width,
-        height: json.media[0]?.image?.dimensions?.height,
+        mediaId: typeof media?.[0] === 'string' ? media[0] : undefined,
+        seed,
+        width: dims[0],
+        height: dims[1],
       };
     };
+
     const uploadImage = async () => {
       const projectId = projectIdFor(payload.projectId);
       if (!projectId) throw new Error('No Flow project selected.');
       if (!payload.base64) throw new Error('uploadImage needs base64 image bytes.');
-      const response = await fetch(`${API}/flow/uploadImage`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${await accessToken()}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          clientContext: { projectId, tool: 'PINHOLE' },
-          imageBytes: payload.base64,
-          isUserUploaded: true,
-          isHidden: false,
-          mimeType: payload.mime || 'image/png',
-          fileName: payload.fileName || 'scene.png',
-        }),
-      });
-      if (!response.ok) throw new Error(`Flow image upload failed (${response.status}).`);
-      const json = await response.json();
-      if (!json?.media?.name) throw new Error('Flow upload returned no media id.');
-      return { mediaId: json.media.name };
-    };
-    const listVideoModels = async () => {
-      const entries = [];
-      const add = (key, label) => entries.push({ key: String(key || ''), label: String(label || '') });
-      const nextData = window.__NEXT_DATA__ || (() => {
-        try { return JSON.parse(document.querySelector('script#__NEXT_DATA__')?.textContent || 'null'); }
-        catch { return null; }
-      })();
-      const configs = nextData?.props?.pageProps?.videoModelConfigs;
-      for (const config of Array.isArray(configs) ? configs : []) add(config.videoModelKey, config.displayName);
-      for (const element of document.querySelectorAll('[role="option"][data-video-model-key]')) {
-        add(element.getAttribute('data-video-model-key'), element.textContent);
-      }
-      let signedIn = false;
-      try { await accessToken(); signedIn = true; } catch { /* fall back without claiming live inventory */ }
-      return { entries, signedIn, projectId: currentProjectId() };
-    };
-    const submitVideoStartImage = async () => {
-      const projectId = projectIdFor(payload.projectId);
-      if (!projectId) throw new Error('No Flow project selected.');
-      if (!payload.mediaId) throw new Error('Video submission needs a start-image media id.');
-      if (!/^[a-z0-9][a-z0-9_.-]{2,127}$/.test(String(payload.modelKey || ''))) {
-        throw new Error('Video submission needs an exact Flow model key.');
-      }
-      const token = await mintToken('VIDEO_GENERATION');
-      const clientContext = {
-        projectId,
-        tool: 'PINHOLE',
-        sessionId: sessionId(),
-        recaptchaContext: recaptchaContext(token),
-      };
-      const response = await fetch(`${API}/video:batchAsyncGenerateVideoStartImage`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${await accessToken()}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          mediaGenerationContext: {
-            batchId: uuid(),
-            audioFailurePreference: 'BLOCK_SILENCED_VIDEOS',
-          },
-          clientContext,
-          requests: [
-            {
-              aspectRatio:
-                VIDEO_ASPECT[payload.aspectRatio] || 'VIDEO_ASPECT_RATIO_LANDSCAPE',
-              textInput: {
-                structuredPrompt: { parts: [{ text: payload.motionPrompt || '' }] },
-              },
-              videoModelKey: payload.modelKey,
-              seed: Number.isFinite(payload.seed) ? payload.seed : randomSeed(),
-              metadata: {},
-              startImage: {
-                mediaId: payload.mediaId,
-                cropCoordinates: { top: 0, left: 0, bottom: 1, right: 1 },
-              },
-            },
-          ],
-          useV2ModelConfig: true,
-        }),
-      });
-      if (!response.ok) {
-        throw new Error(
-          `Flow image-to-video submit failed (${response.status}): ${await errorDetail(response)}`
-        );
-      }
-      const json = await response.json();
-      const mediaId = json?.media?.[0]?.name;
-      if (!mediaId) throw new Error('Flow video submit returned no media id.');
+      const token = await mintToken('UPLOAD_IMAGE');
+      const result = await rpc(RPC.uploadImage, [
+        clientContext(projectId, token),
+        String(payload.base64),
+        payload.mime || 'image/png',
+        1,
+        null,
+        null,
+        null,
+        null,
+        payload.fileName || 'scene.png',
+        null,
+        upperUuid(),
+        upperUuid(),
+      ], projectId);
+      const mediaId = result?.[0]?.[0];
+      if (typeof mediaId !== 'string' || !mediaId) throw new Error('Flow upload returned no media id.');
       return { mediaId };
     };
-    const checkVideo = async () => {
+
+    const submitVideo = async () => {
       const projectId = projectIdFor(payload.projectId);
+      if (!projectId) throw new Error('No Flow project selected.');
+      const mode = payload.mode === 'text' ? 'text' : 'image';
+      const modelKey = String(payload.modelKey || '').trim();
+      if (!EXACT_MODEL.test(modelKey)) throw new Error('Video submission needs an exact Flow model key.');
+      const aspect = VIDEO_ASPECT[payload.aspectRatio || '16:9'];
+      if (!aspect) {
+        throw new Error(`Flow video aspect ratio ${payload.aspectRatio} is not verified on the current app yet — use 16:9.`);
+      }
+      if (!String(payload.prompt || '').trim()) throw new Error('Empty video prompt.');
+      if (mode === 'image' && !payload.mediaId) throw new Error('Image-to-video needs a start-image media id.');
+      const token = await mintToken('VIDEO_GENERATION');
+      const context = clientContext(projectId, token);
+      const requestIds = [null, null, null, null, upperUuid(), upperUuid()];
+      const request = mode === 'text'
+        ? [textInput(payload.prompt), modelKey, aspect, null, requestIds]
+        : [textInput(payload.prompt), [[null, payload.mediaId]], modelKey, aspect, null, requestIds];
+      const result = await rpc(
+        mode === 'text' ? RPC.textToVideo : RPC.imageToVideo,
+        [[request], context, [upperUuid(), 2]],
+        projectId
+      );
+      const mediaId = result?.[2]?.[0]?.[3]?.[4] || result?.[2]?.[1]?.[0]?.[0];
+      if (typeof mediaId !== 'string' || !mediaId) throw new Error('Flow video submit returned no media id.');
+      return { mediaId };
+    };
+
+    const checkVideo = async () => {
       if (!payload.mediaId) throw new Error('Video status check needs a media id.');
-      const response = await fetch(`${API}/video:batchCheckAsyncVideoGenerationStatus`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${await accessToken()}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ media: [{ name: payload.mediaId, projectId }] }),
-      });
-      if (!response.ok) throw new Error(`Flow video status check failed (${response.status}).`);
-      const json = await response.json();
-      const status =
-        json?.media?.[0]?.mediaMetadata?.mediaStatus?.mediaGenerationStatus || 'UNKNOWN';
+      const result = await rpc(
+        RPC.checkVideo,
+        [null, null, [[payload.mediaId]]],
+        projectIdFor(payload.projectId)
+      );
+      const status = result?.[2]?.[0]?.[5]?.[8]?.[0];
+      if (typeof status !== 'number') throw new Error('Flow returned no video status.');
       return {
         status,
-        done: status === 'MEDIA_GENERATION_STATUS_SUCCESSFUL',
-        failed: /FAILED|ERROR|CANCELL?ED/i.test(status),
+        done: status === VIDEO_STATUS_DONE,
+        failed: status !== VIDEO_STATUS_GENERATING && status !== VIDEO_STATUS_DONE,
       };
     };
+
+    const findVideoUrl = (value) => {
+      if (typeof value === 'string') return value.startsWith('https://flow-content.google/video/') ? value : null;
+      if (!Array.isArray(value)) return null;
+      for (const entry of value) {
+        const found = findVideoUrl(entry);
+        if (found) return found;
+      }
+      return null;
+    };
+    const getMedia = async () => {
+      if (!payload.mediaId) throw new Error('Media lookup needs a media id.');
+      const result = await rpc(RPC.getMedia, [payload.mediaId], projectIdFor(payload.projectId));
+      // The media object layout shifts between image and video; search for the
+      // signed /video/ URL instead of trusting a fixed index.
+      const url = findVideoUrl(result);
+      if (!url) throw new Error('Flow returned no verified video URL.');
+      return { url };
+    };
+
+    const listVideoModels = async () => {
+      // The current app has no page-side model manifest. Return no entries so
+      // the worker uses its tested catalog; still report sign-in and project.
+      let signedIn = false;
+      try {
+        wiz();
+        signedIn = true;
+      } catch {
+        // The panel needs a state result, not an exception, for signed-out tabs.
+      }
+      return { entries: [], signedIn, projectId: currentProjectId() };
+    };
+
     const getContext = async () => {
       let signedIn = false;
       try {
-        await accessToken();
+        wiz();
         signedIn = true;
       } catch {
         // The panel needs a state result, not an exception, for signed-out tabs.
       }
       return { projectId: currentProjectId(), signedIn, url: location.href };
     };
+
+    // ponytail: the current app's create-project RPC has not been captured yet.
     const createProject = async () => {
-      const title =
-        payload.title ||
-        new Date().toLocaleString('en-US', {
-          month: 'short',
-          day: '2-digit',
-          hour: '2-digit',
-          minute: '2-digit',
-        });
-      const response = await fetch('/fx/api/trpc/project.createProject', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ json: { projectTitle: title, toolName: 'PINHOLE' } }),
-      });
-      if (!response.ok) throw new Error(`Flow createProject failed (${response.status}).`);
-      const json = await response.json();
-      const projectId = json?.result?.data?.json?.result?.projectId;
-      if (!projectId) throw new Error('Flow createProject returned no projectId.');
-      return { projectId, title };
+      throw new Error('Creating Flow projects is not supported on the current Flow yet — create one in Flow and pick it in the panel.');
     };
 
     const handlers = {
       generateImage,
       uploadImage,
-      listVideoModels,
-      submitVideoStartImage,
+      submitVideo,
       checkVideo,
+      getMedia,
+      listVideoModels,
       getContext,
       createProject,
     };

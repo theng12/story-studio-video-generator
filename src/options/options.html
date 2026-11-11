@@ -71,6 +71,20 @@
       </section>
 
       <section class="settings-section">
+        <span class="settings-section-title">Google Flow</span>
+        <label class="connection-url">Flow address
+          <input id="flowWorkspaceUrl" type="text" placeholder="https://flow.google.com" />
+        </label>
+        <p class="hint connection-copy">Where Google Flow lives. If Google moves it again, paste the new address here and grant site access — no code change needed.</p>
+        <div class="connection-actions">
+          <button id="grantFlow" class="btn" type="button">Grant site access</button>
+        </div>
+        <div class="connection-feedback">
+          <span id="flowGrantStatus" class="connection-note" aria-live="polite"></span>
+        </div>
+      </section>
+
+      <section class="settings-section">
         <span class="settings-section-title">Fleet Hub</span>
         <label class="toggle-row"><input id="fleetEnabled" type="checkbox" /> Enable Fleet Hub on this extension</label>
         <label>Fleet Hub URL

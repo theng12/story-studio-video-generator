@@ -2,15 +2,17 @@ import {
   getSettings,
   saveSettings,
   normalizeFlowProjectId,
+  flowWorkspace,
   getFleetCredentials,
+  getGatewayToken,
 } from './lib/config.js';
 import { StudioClient } from './lib/story-studio.js';
 import { flowCommand } from './lib/flow-exec.js';
 import { inventoryResult, resolveVideoModel, snapshotVideoModel } from './lib/video-models.js';
 import { classifyInterruptedItem, hasActiveDuplicate, isAllowedFleetQueueAction, migrateStoredQueue, standaloneDownloadPath } from './lib/video-rules.js';
+import { createGatewayWorkerId, gatewayJobToItem, isGatewayJobQueued } from './lib/gateway-worker.js';
+import { claimGatewayJob, reportGatewayFailure, reportGatewayProgress, reportGatewayResult, testGateway } from './lib/gateway-client.js';
 
-const FLOW_URL = 'https://labs.google/fx/tools/flow';
-const FLOW_MATCH = 'https://labs.google/fx/*';
 const QUEUE_KEY = 'videoQueue';
 const FLOW_MODEL_INVENTORY_KEY = 'flowVideoModelInventory';
 const PAUSED_KEY = 'videoQueuePaused';
@@ -26,6 +28,8 @@ const FLEET_HUB_PAUSE_KEY = 'videoFleetHubPause';
 const FLEET_PROTOCOL_VERSION = 2;
 const FLEET_PATH = '/api/v2/agents/heartbeat';
 const FLEET_MAX_AGE_MS = 60 * 1000;
+const GATEWAY_ALARM = 'gatewayWorkerTick';
+const GATEWAY_REFERENCES_KEY = 'gatewayJobReferences';
 
 let processing = false;
 let sequence = 0;
@@ -359,19 +363,89 @@ async function setQueue(queue) {
   await chrome.storage.local.set({ [QUEUE_KEY]: queue });
 }
 
+// ── Gateway Studio worker mode ─────────────────────────────────────────────
+// A separate third mode: the extension claims jobs instead of being driven
+// from the panel. Studio and standalone items never carry gatewayJobId, so the
+// existing paths run unchanged.
+async function gatewaySettings() {
+  return { ...(await getSettings()), gatewayToken: await getGatewayToken() };
+}
+
+async function ensureGatewayWorkerId(settings) {
+  if (settings.gatewayWorkerId) return settings.gatewayWorkerId;
+  const workerId = createGatewayWorkerId();
+  await saveSettings({ gatewayWorkerId: workerId });
+  return workerId;
+}
+
+async function storeGatewayReferences(jobId, references) {
+  if (!Array.isArray(references) || !references.length) return;
+  const stored = (await chrome.storage.local.get(GATEWAY_REFERENCES_KEY))[GATEWAY_REFERENCES_KEY] || {};
+  stored[jobId] = references;
+  await chrome.storage.local.set({ [GATEWAY_REFERENCES_KEY]: stored });
+}
+
+async function takeGatewayReferences(jobId) {
+  const stored = (await chrome.storage.local.get(GATEWAY_REFERENCES_KEY))[GATEWAY_REFERENCES_KEY] || {};
+  const references = Array.isArray(stored[jobId]) ? stored[jobId] : [];
+  if (references.length) {
+    delete stored[jobId];
+    await chrome.storage.local.set({ [GATEWAY_REFERENCES_KEY]: stored });
+  }
+  return references;
+}
+
+async function gatewayTick() {
+  const settings = await gatewaySettings();
+  if (settings.mode !== 'gateway' || !settings.gatewayUrl) return null;
+  const workerId = await ensureGatewayWorkerId(settings);
+  const job = await claimGatewayJob({ ...settings, gatewayWorkerId: workerId });
+  if (!job) return null;
+  const queue = await getQueue();
+  if (isGatewayJobQueued(queue, job.jobId)) return null;
+  const item = gatewayJobToItem(job, settings);
+  await storeGatewayReferences(job.jobId, (job.referenceImages || []).filter((reference) => reference?.dataBase64));
+  queue.push(item);
+  await setQueue(queue);
+  createAlarm();
+  await reportGatewayProgress({ ...settings, gatewayWorkerId: workerId }, job.jobId, 'queued', item.label).catch(() => {});
+  processQueue();
+  return item;
+}
+
+async function syncGatewayAlarm() {
+  try {
+    const settings = await getSettings();
+    if (settings.mode === 'gateway') {
+      chrome.alarms?.create(GATEWAY_ALARM, { periodInMinutes: 0.5 });
+      await gatewayTick().catch(() => {});
+    } else {
+      chrome.alarms?.clear(GATEWAY_ALARM);
+    }
+  } catch {
+    // The mode simply does not start; the panel still shows the setting.
+  }
+}
+
 async function patchItem(id, patch) {
   const queue = await getQueue();
   const item = queue.find((candidate) => candidate.id === id);
   if (item) Object.assign(item, patch);
   await setQueue(queue);
+  if (item?.gatewayJobId) {
+    gatewaySettings()
+      .then((settings) => reportGatewayProgress(settings, item.gatewayJobId, item.phase, item.label))
+      .catch(() => {});
+  }
   return item;
 }
 
 async function ensureFlowTab() {
-  const tabs = await chrome.tabs.query({ url: FLOW_MATCH });
+  const workspace = flowWorkspace(await getSettings());
+  const tabs = await chrome.tabs.query({ url: workspace.match });
   const ready = tabs.find((tab) => tab.status === 'complete');
   if (ready) return ready;
-  const tab = tabs[0] || (await chrome.tabs.create({ url: FLOW_URL, active: false }));
+  const tab = tabs[0] || (await chrome.tabs.create({ url: workspace.url, active: false }));
   if (tab.status !== 'complete') {
     await new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
@@ -393,8 +467,9 @@ async function ensureFlowTab() {
 
 async function runFlow(tabId, op, payload = {}) {
   const tab = await chrome.tabs.get(tabId);
-  if (!/^https:\/\/labs\.google\/fx\//i.test(tab?.url || '')) {
-    throw new Error('Refusing to run a Flow command outside labs.google/fx.');
+  const { origin } = flowWorkspace(await getSettings());
+  if (!String(tab?.url || '').startsWith(`${origin}/`)) {
+    throw new Error(`Refusing to run a Flow command outside ${origin}.`);
   }
   const [{ result } = {}] = await chrome.scripting.executeScript({
     target: { tabId },
@@ -419,9 +494,9 @@ async function refreshFlowModels(tab) {
   return { ok: true, ...inventory };
 }
 
-async function requireCurrentModel(modelKey, tab) {
+async function requireCurrentModel(modelKey, tab, mode) {
   const inventory = await refreshFlowModels(tab);
-  return { ...resolveVideoModel(modelKey, inventory.models), source: inventory.source };
+  return { ...resolveVideoModel(modelKey, inventory.models, mode), source: inventory.source };
 }
 
 async function createFlowProject() {
@@ -432,26 +507,24 @@ async function createFlowProject() {
     flowProjectName: created.title || '',
   });
   await chrome.tabs.update(tab.id, {
-    url: `${FLOW_URL}/project/${created.projectId}`,
+    url: flowWorkspace(await getSettings()).project(created.projectId),
     autoDiscardable: false,
   });
   return { ok: true, ...created };
 }
 
-async function fetchVideo(mediaId) {
-  const endpoint =
-    `https://labs.google/fx/api/trpc/media.getMediaUrlRedirect` +
-    `?name=${encodeURIComponent(mediaId)}&mediaUrlType=MEDIA_URL_TYPE_FULL_MEDIA`;
-  const response = await fetch(endpoint, { credentials: 'include' });
-  if (!response.ok) throw new Error(`Video retrieval failed (${response.status}).`);
-  const mediaUrl = new URL(response.url);
+async function fetchVideo(tab, projectId, mediaId) {
+  const media = await runFlow(tab.id, 'getMedia', { projectId, mediaId });
+  const mediaUrl = new URL(String(media?.url || ''));
   if (
     mediaUrl.protocol !== 'https:' ||
-    !(mediaUrl.hostname === 'flow-content.google' ||
-      mediaUrl.hostname.endsWith('.flow-content.google'))
+    !(mediaUrl.hostname === 'flow-content.google' || mediaUrl.hostname.endsWith('.flow-content.google')) ||
+    !mediaUrl.pathname.startsWith('/video/')
   ) {
     throw new Error('Flow returned an untrusted video URL.');
   }
+  const response = await fetch(mediaUrl.href, { credentials: 'omit' });
+  if (!response.ok) throw new Error(`Video retrieval failed (${response.status}).`);
   const contentType = response.headers.get('content-type') || '';
   if (!contentType.startsWith('video/')) throw new Error('Flow returned a non-video asset.');
   const buffer = await response.arrayBuffer();
@@ -529,17 +602,44 @@ async function generateAndSave(item, settings, tab) {
   const projectId = normalizeFlowProjectId(item.projectId || settings.flowProjectId);
   if (!projectId) throw new Error('No Flow project selected.');
   const studio = new StudioClient(settings.studioBaseUrl);
+  const mode = item.videoMode === 'text' ? 'text' : 'image';
 
   if (!item.videoMediaId) {
-    const model = await requireCurrentModel(item.videoModelKey, tab);
+    const model = await requireCurrentModel(item.videoModelKey, tab, mode);
     if (model.label !== item.videoModelLabel) {
       throw new Error('The selected Flow model changed. Refresh models and queue again.');
     }
   }
 
-  if (!item.startMediaId) {
+  if (mode === 'image' && !item.startMediaId) {
     await patchItem(item.id, { phase: 'preparing' });
-    if (item.videoSource === 'generate') {
+    if (item.gatewayJobId) {
+      // Gateway jobs carry their own reference image; without one the start
+      // image is generated, exactly like the other modes.
+      const references = await takeGatewayReferences(item.gatewayJobId);
+      if (references[0]) {
+        await writeStatus(`${item.label}: uploading the reference image…`, 'running');
+        const uploaded = await runFlow(tab.id, 'uploadImage', {
+          projectId,
+          base64: references[0].dataBase64,
+          mime: references[0].mediaType || 'image/png',
+          fileName: `${item.gatewayJobId}.png`,
+        });
+        item.startMediaId = uploaded.mediaId;
+      } else {
+        await patchItem(item.id, { phase: 'image_submitting', imageSubmissionStartedAt: Date.now() });
+        await writeStatus(`${item.label}: generating a start image…`, 'running');
+        const generated = await runFlow(tab.id, 'generateImage', {
+          projectId,
+          prompt: item.imagePrompt || item.motionPrompt,
+          model: item.imageModel || settings.imageModel,
+          aspectRatio: item.aspectRatio,
+          recaptchaMaxAttempts: 4,
+        });
+        item.startMediaId = generated.mediaId;
+      }
+      await patchItem(item.id, { startMediaId: item.startMediaId, phase: 'prepared' });
+    } else if (item.videoSource === 'generate') {
       await patchItem(item.id, { phase: 'image_submitting', imageSubmissionStartedAt: Date.now() });
       await writeStatus(`${item.label}: generating a start image…`, 'running');
       const generated = await runFlow(tab.id, 'generateImage', {
@@ -561,8 +661,8 @@ async function generateAndSave(item, settings, tab) {
         fileName: `${item.sceneId}.png`,
       });
       item.startMediaId = uploaded.mediaId;
+      await patchItem(item.id, { startMediaId: item.startMediaId, phase: 'prepared' });
     }
-    if (item.videoSource !== 'generate') await patchItem(item.id, { startMediaId: item.startMediaId, phase: 'prepared' });
   }
 
   if (!item.videoMediaId) {
@@ -570,13 +670,13 @@ async function generateAndSave(item, settings, tab) {
     // media id, startup quarantines this item instead of charging again.
     await patchItem(item.id, { phase: 'submitting', submissionStartedAt: Date.now() });
     await writeStatus(`${item.label}: submitting paid video generation…`, 'running');
-    const submitted = await runFlow(tab.id, 'submitVideoStartImage', {
+    const submitted = await runFlow(tab.id, 'submitVideo', {
       projectId,
+      mode,
+      prompt: item.motionPrompt,
       mediaId: item.startMediaId,
-      motionPrompt: item.motionPrompt,
       modelKey: item.videoModelKey,
       aspectRatio: item.aspectRatio,
-      durationSec: item.durationSec,
     });
     item.videoMediaId = submitted.mediaId;
     await patchItem(item.id, {
@@ -592,19 +692,20 @@ async function generateAndSave(item, settings, tab) {
       mediaId: item.videoMediaId,
     });
     if (status.done) break;
-    if (status.failed) throw new Error(`Flow video generation ${status.status}.`);
-    if (Date.now() > deadline) throw new Error(`Video timed out (${status.status}).`);
-    await writeStatus(
-      `${item.label}: ${String(status.status)
-        .replace('MEDIA_GENERATION_STATUS_', '')
-        .toLowerCase()}…`,
-      'running'
-    );
+    if (status.failed) throw new Error(`Flow video generation failed (status ${status.status}).`);
+    if (Date.now() > deadline) throw new Error(`Video timed out (status ${status.status}).`);
+    await writeStatus(`${item.label}: generating video…`, 'running');
     await sleep(10000);
   }
 
   await patchItem(item.id, { phase: item.target === 'download' ? 'downloading' : 'ingesting' });
-  const mp4 = await fetchVideo(item.videoMediaId);
+  const mp4 = await fetchVideo(tab, projectId, item.videoMediaId);
+  if (item.target === 'gateway') {
+    const gateway = await gatewaySettings();
+    await reportGatewayResult(gateway, item.gatewayJobId, mp4, 'video/mp4');
+    await takeGatewayReferences(item.gatewayJobId).catch(() => {});
+    return `${item.gatewayJobId}.mp4`;
+  }
   if (item.target === 'download') {
     const filename = `${String(item.downloadPath || 'StoryStudioVideos/Standalone/video.mp4').replace(/\.(mp4|webm)$/i, '')}.mp4`;
     await chrome.downloads.download({
@@ -627,8 +728,9 @@ async function enqueueScenes(payload) {
   const settings = await getSettings();
   const projectId = normalizeFlowProjectId(payload.projectId || settings.flowProjectId);
   if (!projectId) throw new Error('Select a Flow project before queuing videos.');
+  const mode = payload.videoMode === 'text' ? 'text' : 'image';
   const inventory = await refreshFlowModels();
-  const snapshot = snapshotVideoModel(payload.videoModelKey, inventory.models, inventory.source);
+  const snapshot = snapshotVideoModel(payload.videoModelKey, inventory.models, inventory.source, mode);
   const model = { key: snapshot.videoModelKey, label: snapshot.videoModelLabel };
   const queueModel = {
     videoModelKey: model.key,
@@ -660,7 +762,8 @@ async function enqueueScenes(payload) {
       durationSec: scene.durationSec,
       projectId,
       ...queueModel,
-      videoSource: payload.videoSource || settings.videoSource,
+      videoMode: mode,
+      videoSource: mode === 'image' ? payload.videoSource || settings.videoSource : null,
       imageModel: settings.imageModel,
       aspectRatio: payload.aspectRatio || settings.aspectRatio,
     };
@@ -696,8 +799,9 @@ async function enqueueStandalone(payload) {
     : [String(payload?.prompt || '').trim()].filter(Boolean);
   if (!projectId) throw new Error('Select a generation workspace before queuing a video.');
   if (!prompts.length) throw new Error('Enter at least one video prompt before queuing.');
+  const mode = payload?.videoMode === 'text' ? 'text' : 'image';
   const inventory = await refreshFlowModels();
-  const snapshot = snapshotVideoModel(payload.videoModelKey, inventory.models, inventory.source);
+  const snapshot = snapshotVideoModel(payload.videoModelKey, inventory.models, inventory.source, mode);
   const model = { key: snapshot.videoModelKey, label: snapshot.videoModelLabel };
   const queueModel = {
     videoModelKey: model.key,
@@ -725,7 +829,8 @@ async function enqueueStandalone(payload) {
       durationSec: 4,
       projectId,
       ...queueModel,
-      videoSource: 'generate',
+      videoMode: mode,
+      videoSource: mode === 'image' ? 'generate' : null,
       imageModel: settings.imageModel,
       aspectRatio: payload.aspectRatio || settings.aspectRatio,
       target: 'download',
@@ -787,6 +892,11 @@ async function processQueue() {
           });
           await chrome.storage.local.set({ [PAUSED_KEY]: true });
           await writeStatus('Paid submission needs review; the video queue is paused.', 'err');
+          if (current.gatewayJobId) {
+            await gatewaySettings()
+              .then((gateway) => reportGatewayFailure(gateway, current.gatewayJobId, recovery.error, true))
+              .catch(() => {});
+          }
           break;
         }
         if (isTemporaryLimit(error)) {
@@ -805,6 +915,11 @@ async function processQueue() {
             await writeStatus('Generation service limit reached; queue paused for review.', 'info');
           }
           break;
+        }
+        if (current.gatewayJobId) {
+          await gatewaySettings()
+            .then((gateway) => reportGatewayFailure(gateway, current.gatewayJobId, error, false))
+            .catch(() => {});
         }
         await patchItem(current.id, {
           status: 'failed',
@@ -936,6 +1051,15 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       createFleetAlarm();
       reply(Promise.resolve({ ok: true }));
       return true;
+    case 'gatewayTest':
+      reply(gatewaySettings().then(testGateway));
+      return true;
+    case 'gatewayModeChanged':
+      reply(syncGatewayAlarm().then(() => ({ ok: true })));
+      return true;
+    case 'gatewayClaimNow':
+      reply(gatewayTick().then(() => ({ ok: true })));
+      return true;
     default:
       return false;
   }
@@ -943,6 +1067,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
 chrome.alarms?.onAlarm?.addListener((alarm) => {
   if (alarm.name === ALARM) processQueue();
+  if (alarm.name === GATEWAY_ALARM) gatewayTick().catch(() => {});
   if (alarm.name === FLEET_ALARM) {
     sendFleetHeartbeat().catch(async (error) => {
       await chrome.storage.local.set({
@@ -960,3 +1085,4 @@ try {
 
 recoverInterruptedJobs();
 createFleetAlarm();
+syncGatewayAlarm();

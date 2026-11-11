@@ -68,6 +68,7 @@
       <select id="workingMode" aria-label="Working mode">
         <option value="studio">Story Studio</option>
         <option value="standalone">Standalone</option>
+        <option value="gateway">Gateway Studio</option>
       </select>
     </label>
 
@@ -93,6 +94,12 @@
           <select id="videoModel"></select>
         </label>
         <div class="inventory-row"><span id="modelInventoryState" class="muted" aria-live="polite"></span><button id="refreshModels" class="small" type="button">Refresh models</button></div>
+        <label>Video source
+          <select id="videoMode">
+            <option value="image">Start image → video</option>
+            <option value="text">Text prompt → video</option>
+          </select>
+        </label>
         <label>Start image
           <select id="videoSource">
             <option value="existing">Existing scene image</option>
@@ -236,6 +243,25 @@
           <button id="queueStandalone" class="primary" type="button">Queue video</button>
         </div>
       </div>
+    </section>
+
+    <section id="gatewayPane" hidden>
+      <div class="form-grid form-grid-two">
+        <label>Gateway URL
+          <input id="gatewayUrl" type="url" placeholder="http://127.0.0.1:8787" />
+        </label>
+        <label>Worker token
+          <input id="gatewayToken" type="password" autocomplete="off" placeholder="Bearer token" />
+        </label>
+      </div>
+      <div class="row between">
+        <span id="gatewayWorker" class="muted small"></span>
+        <div class="hgroup">
+          <button id="gatewayConnect" class="small" type="button">Test gateway</button>
+          <button id="gatewayClaim" class="small" type="button">Claim now</button>
+        </div>
+      </div>
+      <p id="gatewayStatus" class="muted" aria-live="polite"></p>
     </section>
 
     <div id="studioBatchActions" class="batch-actions">
