@@ -890,6 +890,17 @@ test('an executable reply to an unquoted request remains held and cannot generat
   } finally { worker.restore(); }
 });
 
+test('a claimed job over the advertised claim limit is never stored or generated', async () => {
+  const worker = await boot({ health: { claimMaxBytes: 64 } });
+  try {
+    const response = await worker.send({ type: 'gatewayClaimNow' });
+    assert.equal(response.ok, false);
+    assert.match(response.error, /advertised claim limit is 64/);
+    assert.equal(worker.local.videoQueue?.length || 0, 0);
+    assert.equal(generated(worker), 0);
+  } finally { worker.restore(); }
+});
+
 test('legacy queued claim without a quote reservation cannot start generation', async () => {
   const worker = await boot({ job: null });
   try {

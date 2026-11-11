@@ -6,6 +6,7 @@
 - Account readiness and credits remain unknown until observed from the provider; a configured profile label never authorizes spending.
 - A job preview cannot generate a video. Paid work needs an exact observed quote and matching account reservation.
 - Checking status during active generation keeps that work active; uncertain work stays held for review.
+- A Gateway job bigger than the size Gateway itself advertises is refused before it is saved or run.
 
 ## 1.3.4 — 2026-11-11
 

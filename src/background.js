@@ -600,6 +600,11 @@ async function gatewayTick() {
         receipt.reservation?.payloadSha256 !== quote.payloadSha256 || receipt.reservation?.value !== quote.value || receipt.reservation?.unit !== quote.unit) {
       throw new Error('Gateway reservation/account does not match the observed quote; ownership remains held.');
     }
+    // The Gateway advertises claimMaxBytes; an oversized claim is refused before it is stored or run.
+    const claimBytes = new TextEncoder().encode(JSON.stringify(job)).byteLength;
+    if (Number.isSafeInteger(health.claimMaxBytes) && health.claimMaxBytes > 0 && claimBytes > health.claimMaxBytes) {
+      throw new Error(`Gateway job is ${claimBytes} bytes; the advertised claim limit is ${health.claimMaxBytes}. It was not run.`);
+    }
     const latest = await getQueue();
     if (isGatewayJobQueued(latest, job.jobId)) throw new Error('Gateway returned an already recorded job; the new claim remains held.');
     const item = { ...gatewayJobToItem(job, settings), gatewayBinding: binding, gatewayClaimId: claimId,
