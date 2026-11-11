@@ -7,6 +7,7 @@
 - A job preview cannot generate a video. Paid work needs an exact observed quote and matching account reservation.
 - Checking status during active generation keeps that work active; uncertain work stays held for review.
 - A Gateway job bigger than the size Gateway itself advertises is refused before it is saved or run.
+- Connected to Gateway, the extension keeps showing its state in Studio and Standalone modes too — stopped, never taking work — so Gateway can always see and stop it.
 
 ## 1.3.4 — 2026-11-11
 

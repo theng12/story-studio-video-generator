@@ -544,6 +544,8 @@ async function gatewayTick() {
     if (!initial.gatewayUrl || !initial.gatewayToken) return null;
     const { settings, health } = await connectGateway();
     await publishGatewayState(settings);
+    // Connecting and reporting state in every mode is deliberate: a paired worker must stay visible
+    // and stoppable from Gateway while stopped/not enabled. Only claiming is gated on Gateway mode.
     if ((await getSettings()).mode !== 'gateway' || processing || await isPaused() || await managerDispatchPaused(await getSettings())) return null;
     const queue = await getQueue();
     if (queue.some((item) => ['pending', 'running'].includes(item.status) || (item.gatewayJobId && !item.gatewaySettled))) return null;
