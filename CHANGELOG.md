@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.3.1
+
+- Added the captured Omni 1.2 Flash models: text-to-video 4s (`macaron_cookie_t2v_4s`) and image-to-video 3s (`macaron_cookie_r2v_3s`). Length is part of the model key.
+
+## 1.3.0
+
+- Added a third, separate Gateway Studio mode: the extension claims jobs from the gateway, runs them through the existing queue, and returns the finished clip. Studio and standalone modes are unchanged.
+- Added the worker protocol client (`gateway-client.js`) and pure job mapping (`gateway-worker.js`).
+
+## 1.2.0
+
+- Ported Google Flow to the current app: text-to-video and image-to-video, status polling, and signed video download.
+- Removed the retired labs.google REST/session endpoints and the dead API host permission.
+
+## 1.1.1
+
+- Made the Google Flow address editable in Settings with a site-access grant, so a future Flow move is a paste instead of a code change.
+
 ## 1.1.0
 
 - Added signed Flow model inventory discovery with tested fallback provenance and fail-closed exact model snapshots.

@@ -1,20 +1,17 @@
+// Video model catalog for the current Google Flow app.
+//
+// Captured live 2026-11-09: text-to-video and image-to-video are separate RPCs.
+// The app exposes a model-family list (`yBhWQ`) but not the duration-specific
+// keys — the length is the key suffix (`..._4s`, `..._3s`) — so this tested
+// catalog is the source of truth and the worker fails closed on a stale pick.
 export const FALLBACK_VIDEO_MODELS = Object.freeze([
-  { key: 'abra_i2v_4s', label: 'Omni Flash - 4 seconds' },
-  { key: 'abra_i2v_6s', label: 'Omni Flash - 6 seconds' },
-  { key: 'abra_i2v_8s', label: 'Omni Flash - 8 seconds' },
-  { key: 'abra_i2v_10s', label: 'Omni Flash - 10 seconds' },
-  { key: 'veo_3_1_i2v_lite', label: 'Veo 3.1 Lite' },
-  { key: 'veo_3_1_i2v_fast', label: 'Veo 3.1 Fast' },
-  { key: 'veo_3_1_i2v_quality', label: 'Veo 3.1 Quality' },
+  { key: 'macaron_cookie_t2v_4s', label: 'Omni 1.2 Flash - 4 seconds', mode: 'text' },
+  { key: 'abra_t2v_8s', label: 'Omni Flash - 8 seconds', mode: 'text' },
+  { key: 'macaron_cookie_r2v_3s', label: 'Omni 1.2 Flash - 3 seconds', mode: 'image' },
+  { key: 'abra_r2v_10s', label: 'Omni Flash - 10 seconds', mode: 'image' },
 ]);
 
 const EXACT_KEY = /^[a-z0-9][a-z0-9_.-]{2,127}$/;
-const LEGACY = Object.freeze({
-  'omni-flash': { key: 'abra_i2v_4s', label: 'Omni Flash - 4 seconds' },
-  'veo-3.1-lite': { key: 'veo_3_1_i2v_lite', label: 'Veo 3.1 Lite' },
-  'veo-3.1-fast': { key: 'veo_3_1_i2v_fast', label: 'Veo 3.1 Fast' },
-  'veo-3.1-quality': { key: 'veo_3_1_i2v_quality', label: 'Veo 3.1 Quality' },
-});
 
 export function normalizeVideoInventory(entries) {
   const seen = new Set();
@@ -23,8 +20,16 @@ export function normalizeVideoInventory(entries) {
     const label = String(entry?.label || '').trim();
     if (!EXACT_KEY.test(key) || !label || label === key || seen.has(key)) return [];
     seen.add(key);
-    return [{ key, label }];
+    return [{ key, label, mode: entry?.mode === 'text' ? 'text' : 'image' }];
   });
+}
+
+export function modelsForMode(models, mode = 'image') {
+  return normalizeVideoInventory(models).filter((model) => model.mode === mode);
+}
+
+export function defaultVideoModel(mode = 'image') {
+  return FALLBACK_VIDEO_MODELS.find((model) => model.mode === mode) || FALLBACK_VIDEO_MODELS[0];
 }
 
 export function inventoryResult(entries, context = {}) {
@@ -34,22 +39,16 @@ export function inventoryResult(entries, context = {}) {
     : { source: 'fallback', models: FALLBACK_VIDEO_MODELS };
 }
 
-export function resolveVideoModel(key, models) {
+export function resolveVideoModel(key, models, mode = 'image') {
   const exact = String(key || '').trim();
   if (!EXACT_KEY.test(exact)) throw new Error('Select an exact Flow model before queueing.');
-  const match = normalizeVideoInventory(models).find((model) => model.key === exact);
-  if (!match) throw new Error('The selected Flow model is not available in the current inventory. Refresh models and choose again.');
+  const match = modelsForMode(models, mode).find((model) => model.key === exact);
+  if (!match) throw new Error('The selected Flow model is not available for this video source. Refresh models and choose again.');
   return match;
 }
 
-export function migrateLegacyVideoModel(value) {
-  const match = LEGACY[String(value || '')];
-  if (!match) throw new Error('Unknown legacy video model. Refresh Flow models and choose again.');
-  return { ...match };
-}
-
-export function snapshotVideoModel(key, models, source) {
-  const model = resolveVideoModel(key, models);
+export function snapshotVideoModel(key, models, source, mode = 'image') {
+  const model = resolveVideoModel(key, models, mode);
   return {
     videoModelKey: model.key,
     videoModelLabel: model.label,
@@ -57,17 +56,12 @@ export function snapshotVideoModel(key, models, source) {
   };
 }
 
+// The pre-1.2 catalog is retired with the old Flow REST API. Drop the legacy
+// fields so normalize() can select a model from the current catalog.
 export function upgradeStoredVideoSettings(raw) {
   const stored = { ...(raw || {}) };
-  const legacyValue = stored.videoModel;
   delete stored.videoModel;
   delete stored['video' + 'Provider'];
   delete stored['save' + 'Target'];
-  if (stored.videoModelKey || !legacyValue) return stored;
-  try {
-    const model = migrateLegacyVideoModel(legacyValue);
-    return { ...stored, videoModelKey: model.key, videoModelLabel: model.label, videoModelSource: 'fallback' };
-  } catch {
-    return stored;
-  }
+  return stored;
 }

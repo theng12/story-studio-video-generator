@@ -14,6 +14,7 @@ const $ = (id) => document.getElementById(id);
 const FIELDS = [
   'theme',
   'studioBaseUrl',
+  'flowWorkspaceUrl',
   'fleetEnabled',
   'fleetHubUrl',
   'fleetMachineName',
@@ -207,6 +208,34 @@ async function grantAccess() {
   }
 }
 
+async function refreshFlowGrant() {
+  const status = $('flowGrantStatus');
+  const url = $('flowWorkspaceUrl').value.trim();
+  const pattern = originPattern(url);
+  if (!pattern) {
+    status.textContent = 'Enter a full https:// address.';
+    status.style.color = 'var(--danger)';
+    return;
+  }
+  const granted = await chrome.permissions.contains({ origins: [pattern] }).catch(() => false);
+  status.textContent = granted ? '✓ Site access granted.' : 'Site access not granted yet.';
+  status.style.color = granted ? 'var(--ok)' : 'var(--warning)';
+}
+
+async function grantFlow() {
+  const status = $('flowGrantStatus');
+  const pattern = originPattern($('flowWorkspaceUrl').value.trim());
+  if (!pattern) return refreshFlowGrant();
+  try {
+    const granted = await chrome.permissions.request({ origins: [pattern] });
+    status.textContent = granted ? '✓ Site access granted.' : 'Site access request was declined.';
+    status.style.color = granted ? 'var(--ok)' : 'var(--danger)';
+  } catch (error) {
+    status.textContent = `Couldn’t grant site access: ${error.message}`;
+    status.style.color = 'var(--danger)';
+  }
+}
+
 async function testConnection() {
   const status = $('testStatus');
   const url = $('studioBaseUrl').value.trim();
@@ -284,8 +313,11 @@ async function load() {
   $('fleetTestConnection').addEventListener('click', testFleetConnection);
   $('generateFleetSecret').addEventListener('click', generateFleetSecret);
   $('studioBaseUrl').addEventListener('input', refreshGrantStatus);
+  $('flowWorkspaceUrl').addEventListener('input', refreshFlowGrant);
+  $('grantFlow').addEventListener('click', grantFlow);
   $('fleetHubUrl').addEventListener('input', refreshFleetGrantStatus);
   refreshGrantStatus();
+  refreshFlowGrant();
   refreshFleetGrantStatus();
   renderFleetHealth();
 
