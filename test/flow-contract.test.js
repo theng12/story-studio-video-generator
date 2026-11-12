@@ -25,7 +25,7 @@ function install({ responses } = {}) {
     fetch: globalThis.fetch,
   };
   globalThis.window = {
-    WIZ_global_data: { SNlM0e: 'at-token', FdrFJe: 'sid', cfb2h: 'bl' },
+    WIZ_global_data: { SNlM0e: 'at-token', FdrFJe: 'sid', cfb2h: 'bl', S06Grb: '1234567890' },
     grecaptcha: {
       enterprise: {
         ready: (callback) => callback(),
@@ -225,7 +225,7 @@ test('reads the captured nzlxg balance and quotes a priced preview', async (t) =
   assert.deepEqual(JSON.parse(mock.requests[0].freq[0][0][1]), []);
   const { account, quote } = result.result;
   assert.equal(account.provider, 'flow');
-  assert.equal(account.accountId, 'flow.sid');
+  assert.equal(account.accountId, 'flow.1234567890');
   assert.equal(account.readiness, 'ready');
   assert.deepEqual([account.balance.value, account.balance.unit, account.balance.source], [23, 'credits', 'flow.nzlxg']);
   assert.deepEqual([quote.value, quote.unit, quote.payloadSha256], [12, 'credits', PREVIEW_HASH]);
@@ -253,4 +253,13 @@ test('an unreadable balance stays unknown and never becomes zero', async (t) => 
   assert.equal(result.ok, true, result.error);
   assert.deepEqual([result.result.account.readiness, result.result.account.balance], ['unknown', null]);
   assert.equal(result.result.quote, null);
+});
+
+test('a signed-in page with no provider identity is refused, not guessed', async (t) => {
+  const saved = globalThis.window;
+  globalThis.window = { WIZ_global_data: { SNlM0e: 'at-token', FdrFJe: 'sid', cfb2h: 'bl' } };
+  t.after(() => { globalThis.window = saved; });
+  const result = await flowCommand({ op: 'inspectAccount', payload: {} });
+  assert.equal(result.ok, false);
+  assert.match(result.error, /no stable account identity/i);
 });

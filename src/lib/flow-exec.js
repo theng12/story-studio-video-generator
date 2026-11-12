@@ -365,11 +365,12 @@ export async function flowCommand(command) {
     // Observed live per clip: 4s text = 12, 3s image = 9. 6s/10s come from Flow's
     // own UI at 720p. Any other length has no observed price, so it gets no quote.
     const VIDEO_CREDIT_COST = Object.freeze({ 3: 9, 4: 12, 6: 18, 10: 30 });
-    // Opaque page-provided identity only — never a cookie, email or profile label.
+    // Opaque page-provided identity only — never a cookie, email, session id or
+    // profile label. A session is not an account, so there is no fallback.
     const providerAccountId = () => {
       const data = window.WIZ_global_data || {};
       const raw = ['S06Grb', 'S09Zad', 'oPEP7c'].map((key) => data[key]).find((value) => typeof value === 'string' && value);
-      const stable = String(raw || wiz().sid || '').replace(/[^A-Za-z0-9_.:-]/g, '-').slice(0, 100);
+      const stable = String(raw || '').replace(/[^A-Za-z0-9_.:-]/g, '-').slice(0, 100);
       return stable ? `flow.${stable}` : '';
     };
     // Read-only: reports the provider account, its credit balance and, when a
