@@ -341,21 +341,23 @@ export async function flowCommand(command) {
       const summary = summaries.length === 1 ? summaries[0] : null;
       // The panel's own words, matched loosely for wrapped whitespace and casing.
       const price = text.match(/Generating\s+will\s+use\s+(\d+)\s+credits?/i);
-      // The trigger reads "<summary>\n<ratio icon>\n<count>", so the selected ratio is
-      // its own line. The model is not on the trigger for video (it is for images), so
-      // it has to come from a marked control in the open panel.
+      // The trigger reads "<summary>\n<ratio icon>\n<count>". The model is not on the
+      // trigger for video; the open panel's model dropdown ends with `arrow_drop_down`
+      // and its ratio is a checked mat-button-toggle radio carrying `crop_16_9`.
+      const nodes = (selector) => typeof document === 'undefined' || !document.querySelectorAll
+        ? [] : [...document.querySelectorAll(selector)];
       const trigger = typeof document === 'undefined' ? null : document.querySelector?.('button[aria-label="Settings trigger"]');
       const triggerText = String(trigger?.innerText || '');
-      const chips = typeof document === 'undefined' || !document.querySelectorAll ? []
-        : [...document.querySelectorAll('[aria-pressed="true"],[aria-selected="true"],[aria-checked="true"]')];
-      const chipText = chips.map((node) => `${node?.innerText || ''} ${node?.getAttribute?.('aria-label') || ''}`).join('\n');
-      const chip = (triggerText.match(/crop_16_9|crop_9_16/) || chipText.match(/crop_16_9|crop_9_16|\b16:9\b|\b9:16\b/));
+      const dropdown = nodes('button,[role=combobox]').find((node) => /arrow_drop_down/.test(node?.innerText || ''));
+      const checked = nodes('[aria-checked="true"],[aria-pressed="true"],[aria-selected="true"]')
+        .map((node) => node?.innerText || '').join('\n');
+      const chip = checked.match(/crop_16_9|crop_9_16/) || triggerText.match(/crop_16_9|crop_9_16/);
       return {
         selection: summary ? {
           resolution: summary[1], durationSec: Number(summary[2]), outputCount: Number(summary[3]),
         } : null,
         lineValue: price ? Number(price[1]) : null,
-        model: `${chipText}\n${triggerText}`,
+        model: String(dropdown?.innerText || '').split('\n')[0],
         ratio: chip ? CHIP_RATIO[chip[0]] || null : null,
       };
     };

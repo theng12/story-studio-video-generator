@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.17 — 2026-11-12
+
+- The selected model is read from the panel's model dropdown and the ratio from its checked chip, both confirmed against a live panel dump rather than guessed attributes.
+
 ## 1.3.16 — 2026-11-12
 
 - The selected ratio is read from the settings trigger's own line, which a real capture shows reads `Video · 720p · 8s` / `crop_16_9` / `x2`, instead of guessing at a pressed-chip attribute.

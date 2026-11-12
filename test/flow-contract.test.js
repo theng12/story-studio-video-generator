@@ -310,7 +310,11 @@ function composerPage({ model = 'Omni 1.2 Flash', ratio = 'crop_16_9', video = '
   return {
     body: { innerText: `${trigger}\n${line}` },
     querySelector: (selector) => selector === 'button[aria-label="Settings trigger"]' ? { innerText: trigger } : null,
-    querySelectorAll: (selector) => selector.includes('aria-checked') ? [{ innerText: model, getAttribute: () => null }] : [],
+    querySelectorAll: (selector) => {
+      if (selector.includes('combobox')) return [{ innerText: `${model}\narrow_drop_down` }];
+      if (selector.includes('aria-checked')) return [{ innerText: `${ratio}\n${ratio === 'crop_9_16' ? '9:16' : '16:9'}` }];
+      return [];
+    },
   };
 }
 
