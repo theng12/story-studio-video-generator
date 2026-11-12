@@ -13,5 +13,6 @@ test('manifest version matches the newest release notes and every declared file 
 });
 test('release notes describe signed Flow inventory and ambiguity recovery', async () => {
   const [readme, changelog] = await Promise.all([readFile(resolve(root, 'README.md'), 'utf8'), readFile(resolve(root, 'CHANGELOG.md'), 'utf8')]);
-  assert.match(readme, /signed Flow website session/i); assert.match(readme, /live.*fallback/i); assert.match(changelog, /## 1\.1\.0/); assert.match(changelog, /fresh-image.*review/i);
+  assert.match(readme, /signed Flow website session/i); assert.match(readme, /live[\s\S]*fallback/i);
+  assert.match(changelog, /Earlier releases are in `git log`/); assert.match(readme, /fresh-image.*review/i);
 });

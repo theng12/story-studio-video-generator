@@ -1,162 +1,133 @@
 # Story Studio Video Generator
 
-A Chrome extension for turning Story Studio scenes into organized video files.
+A Manifest V3 Chrome extension for turning Story Studio scenes into video files. It is video-only,
+it uses the signed Flow website session, and it spends that account's credits.
 
-## What It Does
+Two things are never traded away: **a paid submission whose outcome is unknown is never replayed**,
+and **retained media is never regenerated to retry a delivery**. Persist the returned media ID
+immediately and resume polling after an interruption.
 
-- Works with eligible scenes from a connected Story Studio project.
-- Lets you choose an episode, select scenes, and configure the available video
-  settings for a batch.
-- Supports two video sources: **text prompt → video** and **start image → video**
-  (an existing scene image or a freshly generated one).
-- Runs selected work through a persistent queue with progress, pause, retry, and
-  recovery controls.
-- Saves finished videos to the connected project workspace.
+Text-to-video (`YhhmEf`) and image-to-video (`MZZa6b`) are separate Flow RPCs with separate model
+keys; a key from one source is never used for the other.
 
-## Workflow
+## Modes
 
-1. Open the side panel and connect a Story Studio project.
-2. Select an episode, then choose the scenes and settings for the batch.
-3. Queue the selected work and monitor its status in the active batch view.
-4. Let the extension save each completed video to the project workspace.
+`studio`, `standalone` and `gateway`. The first two are unchanged and untouched by gateway work.
+Gateway items are tagged with `gatewayJobId` and never routed through the studio/standalone UI paths.
 
-## Gateway Studio mode
+The queue is persistent, sequential, deduplicated and independent of the side panel. Story Studio
+clip ingestion and Downloads naming are preserved.
 
-A third, separate mode next to Story Studio and Standalone. Instead of the
-panel queueing work, the extension claims generation jobs from Gateway Studio,
-runs them through the same persistent queue, and uploads the finished clip back.
-The other two modes are unchanged.
+## Worker contract v1
 
-1. Set the mode to **Gateway Studio** and enter the gateway URL and worker token.
-2. Connection checks learn the worker identity from the authenticated Gateway health response. The worker checks for jobs every 30 seconds (or press **Claim now**) while idle, unpaused, and with an open Flow workspace.
-3. Gateway jobs stay bound to the connection that claimed them. Changing the URL, token, or mode holds retained work until that connection is restored. Clear pending preserves Gateway-owned rows.
-4. Finished video bytes are retained in IndexedDB until Gateway explicitly accepts the result. A failed delivery can be retried without opening Flow or generating again. A known submitted video ID resumes polling; an uncertain paid submission stays held and must be resolved in Gateway.
-5. Gateway image-to-video requires exactly one supplied reference and preserves it until settlement; it never generates a paid replacement image. Unknown source, aspect, duration, or live model availability refuses the job.
+The extension only makes outbound calls; it opens no port. Auth is a per-worker bearer token.
 
-These are source recovery safeguards, not live acceptance evidence. Real Chrome/provider checks and Gateway catalogue alignment are required before release.
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/workers/health` | returns `kind`, `workerId`, `maxResultBytes`, `leaseSeconds`, `accountMaxAgeSeconds`, `claimMaxBytes`, `control` |
+| POST | `/api/workers/claim` | `204`, or a `quoteRequired` preview, then a quoted claim |
+| POST | `/api/workers/jobs/{id}/progress` | `{ phase, message }` |
+| POST | `/api/workers/jobs/{id}/result` | multipart `mediaType` + `file` |
+| POST | `/api/workers/jobs/{id}/fail` | `{ error, ambiguous }` |
+| POST | `/api/workers/telemetry` | account-worker schema 1 state |
 
-Worker contract v1 (the extension only makes outbound calls):
+Claims run every 30 seconds while idle, unpaused, in gateway mode, with an open Flow workspace, or
+on **Claim now**. Health and telemetry are reported in every mode so Gateway can always see and stop
+a paired worker; only gateway mode may claim. Gateway jobs stay bound to the connection that claimed
+them: changing the URL, token or mode holds retained work until that connection is restored.
 
-| Method | Path |
-|---|---|
-| GET | `/api/workers/health` |
-| POST | `/api/workers/claim` → `204` or `{ job }` |
-| POST | `/api/workers/jobs/{id}/progress` |
-| POST | `/api/workers/jobs/{id}/result` (multipart file) |
-| POST | `/api/workers/jobs/{id}/fail` |
-
-For local verification without the real gateway, run the mock in the parent
-`chrome-extensions` folder:
+For local verification without the real gateway, run the mock in the parent `chrome-extensions`
+folder:
 
 ```bash
 FLOW_PROJECT_ID=<flow-project-uuid> node _capture/mock-gateway.mjs
 ```
 
+## Price rules (owner, 2026-11-12)
+
+A rate belongs to a **model**, never to video in general, and the unit is credits per second.
+
+| Model | 360p | 720p |
+|---|---|---|
+| Omni Flash 1.2 (`macaron_cookie_t2v_4s`, `macaron_cookie_r2v_3s`) | 1 | 3 |
+
+Observed at 3–10 second lengths only. A model with no rate has no quote — it never borrows another
+model's — and Veo 3.1 - Lite is deliberately unrated: Flow's panel quoted 10 credits for one 8s 720p
+clip where Omni's rate would say 24.
+
+The primary price is Flow's own panel line, `Generating will use N credits`, read as
+`{ value, unit: 'credits', source: 'flow.panel.price' }`. It is trusted only when the composer is set
+to the same model, ratio, resolution and length as the job with a single output, because the line
+prices whatever the composer currently shows. The rate table answers only when that line is absent.
+When both answer and disagree, the page wins and the disagreement is reported — never resolved
+silently. A missing panel plus an unpriced job refuses the claim rather than quoting zero.
+
+**One video per job.** x2, x3 and x4 waste credits, so the count is always one and a panel price for
+any other count is never treated as this job's price.
+
+## Refusals
+
+These stop before any provider work, and each names what is missing:
+
+- an unmapped aspect ratio (9:16 is a live chip but Flow's value for it has never been observed)
+- a resolution whose Flow key was never captured (360p: rate known, key unobserved)
+- a duration outside 3–10 seconds
+- a model with no observed price
+- unknown or changed model availability, and any unknown Gateway request field
+
+Unknown Gateway fields are kept as inert `unmappedFields` on the queue row: never flattened into
+executable queue state, silently dropped or defaulted.
+
+## Account, quote and claim
+
+The read-only inspector reads the captured `nzlxg` credit RPC and binds an opaque page-provided
+identity, refreshed on every inspection and never cached past the account max age. It generates
+nothing. Readiness follows the page: signed in and connected is `ready`, only a known zero balance is
+`not_ready`, and an unreadable balance is `null` — never zero.
+
+An observed stable opaque account, fresh matching state and an exact observed quote are required
+before a new executable claim. `quoteRequired.job` is an UNCLAIMED preview with
+`executionAuthorized: false`: never queued, never generated. The quoted claim carries the observed
+account in the same request, then verifies the returned account/reservation and rechecks the signed-in
+account before provider action. A configured profile ID is never sent as provider identity.
+
+Control revisions are echoed only after dispatch and pacing readback actually match. OFF, cooldown and
+unknown holds survive restart, and local Resume cannot override OFF. `closeRequested` never closes
+Chrome, cancels work, releases a hold or replays paid work; Gateway owns `safeToClose` and the
+account-wide reservation and spending switches. Never kill a browser.
+
+## Pacing
+
+Settings and the side panel edit the same 0–3600 second range. New settings default to a random 5–15
+second pause and the first generation starts without one; existing custom ranges, including 0–0, are
+retained. The sampled pause is saved before each submission and kept through recovery. Deadlines
+survive MV3 restarts through Chrome alarms, and an alarm is earliest eligibility, not a promised
+start time. Provider cooldowns stay authoritative and separate. Known-media polling and saved-result
+delivery bypass new-generation waits and create no new pause. Gateway checks eligibility before
+claiming.
+
 ## Availability
 
-Video generation uses the signed Flow website session and that website account's
-quota or credits. There is no developer API key, developer billing account, or
-separate API route. The panel shows live inventory or the tested fallback catalog based on whether Flow exposes an exact provider key. Unknown or changed models fail before image or video work.
+Generation uses the signed Flow website session and that website account's quota or credits: there is
+no developer API key, billing account or separate route. The panel shows live inventory or the tested
+fallback catalog. The fallback preserves historical Omni model and length references; those are not
+evidence of the current transport, so every mode refuses new work until a current request mapping is
+verified, and known media or retained Gateway bytes still use their recovery paths without generating
+again. The Flow address is a Settings field: if Google moves Flow, paste the new address and grant
+site access there.
 
-The Flow address is a Settings field. If Google moves Flow again, paste the new
-address and grant site access there — no code change is needed.
+## Discovery and control parity
 
-The current Flow app is driven through its own signed `batchexecute` endpoint.
-The fallback catalog preserves historical Omni 1.2 Flash and Omni Flash model and
-length references from the prior implementation. These are not evidence of the
-current video transport or live availability. Every mode refuses new image/video
-work until a current video request mapping is verified; historical references
-preserve selections only. Known video IDs and retained Gateway bytes still use
-their existing recovery/delivery paths without generating again.
-Choose a clip length in Provider settings; that choice persists with the model
-and every queue row. For Story scenes this is the generated clip length; the scene
-timeline length is retained separately. An unsupported combination is refused
-before any fresh-image or video submission. Neither labels nor key suffixes are
-used to invent another backend ID or duration binding.
+All three generator extensions must list new models dynamically and carry new controls and durations
+through Story and Gateway. An observed listing, a verified request schema, control support and a
+successful generation are four distinct evidence states; a listing proves none of the others. The
+checklist is in `AGENTS.md`.
 
-Refreshing can report the visible workspace's selected length, resolution and
-output count as UI observations. Those observations do not change your selection
-or authorize new lengths. The reported Omni 1.2 Flash 3–10s UI range still needs
-sanitized text/image request captures pairing each exact key and RPC payload with
-its selected duration, aspect, resolution and output count. Until those mappings
-and live availability are captured, the corresponding combinations remain
-unavailable, and Gateway keeps its existing live-inventory refusal.
-
-## Discovery and control parity: future releases
-
-The owner requires all three generator extensions to list new models dynamically
-and carry newly supported controls and durations through Story and Gateway. This
-is a release requirement, not a claim that current live discovery is implemented.
-The maintained checklist is in `AGENTS.md`. An observed listing, a verified request
-schema, control support and a successful generation are distinct evidence states.
-
-Story scene timeline duration is retained separately from the selected clip
-length. Unknown Gateway request fields are retained as inert `unmappedFields` on
-the queue row and refuse new provider work; they never become executable queue
-state or silently disappear. Existing known media and retained delivery bytes do
-not regenerate because new metadata is present.
-
-The missing Story/Gateway counterpart contract must define discovery identity
-and freshness, each control's type/value domain, scene-versus-clip duration,
-immutable job binding, unknown-field round-trip and unsupported/refusal reporting.
-No new wire schema or model/duration IDs are inferred here. Current video request
-capture and live acceptance remain missing and owned by Stack.
-
-## Account labels and generation pacing
-
-Settings and the side panel edit the same saved pause range (0–3600 seconds).
-New settings default to a random 5–15-second pause; existing custom
-ranges, including 0–0, are retained. The first generation starts without a pause.
-The worker saves its sampled pause before each actual image/video submission and
-retains it through recovery, then starts the gap when that work finishes. A freshly
-generated start image also pauses before its video; it is not generated again.
-Future deadlines survive MV3 restarts and wake through Chrome alarms. Alarm timing
-is earliest eligibility, not a promise of an exact start time. Provider cooldowns
-remain separate, including manual review holds. Known-media polling and saved-result
-delivery bypass new-generation waits and do not create an unrelated new pause.
-Gateway checks eligibility before claiming; uncertain paid work remains held.
-
-The optional shared account profile ID is a configured label: use one ID for the
-same image/video browser account/profile. Local `getQueue` telemetry returns
-`manager.account` (`profileId`, `identitySource`, and unknown `ready`, `creditBalance`,
-`creditResetAt`), `manager.pacing` (`minimumSec`, `maximumSec`, `nextGenerationAt`,
-`cooldownUntil`, timestamps in epoch milliseconds), and observed `manager.inventory`.
-No account readiness, credit balance or reset time is inferred from a label.
-
-Gateway account-worker schema 1 now adds authenticated `/api/workers/telemetry`
-readback and `control` on health, telemetry and claim replies. Desired dispatch,
-close and pacing are saved locally; a revision is echoed only after actual dispatch
-and pacing readback matches. OFF survives restart and local Resume cannot override
-it. A paired worker keeps reporting in Story and Standalone modes; only Gateway
-mode may claim jobs. The manager's initial default range does not overwrite an existing custom range:
-actual pacing is reported, dispatch stays off and the unmatched revision is not
-acknowledged until a subsequent explicit control matches or changes it. Unsupported
-ranges above this extension's displayed 3600-second limit are refused without ack.
-Provider cooldowns remain authoritative; fractional custom ranges also persist.
-
-External state reports connection/sign-in/readiness independently from actual
-activity, enabled/paused state, control revision, pacing and next eligibility as
-zoned ISO timestamps. Unknown claims and active/recovering work never report an
-idle close acknowledgement. `closeRequested` never closes Chrome, cancels work,
-releases a hold or replays paid work; Gateway owns `safeToClose` and account-wide
-reservation/spending switches. New/missing dispatch control remains OFF. No app-only
-account enablement or manager token operation is called by the extension.
-
-A configured profile ID is never transmitted as provider account identity. The
-read-only Flow account/quote inspector reads the captured `nzlxg` credit RPC and
-binds an opaque page-provided identity, refreshed on every inspection and never
-cached past the account max age; it generates nothing. An unreadable balance is
-reported as unknown, never as zero, and a clip length with no observed price gets
-no quote.
-An observed stable opaque provider account, fresh matching state/revision and an
-exact observed provider quote are required before a new executable Gateway claim.
-`quoteRequired.job` is an UNCLAIMED preview with `executionAuthorized:false`, never
-queued or generated. The quoted claim sends actual account observations in that
-same request, then verifies returned account/reservation and rechecks the signed-in
-account before provider actions. Known media and retained result delivery keep their
-recovery paths. Gateway remains the sole authentication/queue/artifact authority;
-its real enabled-account switch is never inferred from a quote or profile label.
-This source adoption is offline-tested, not installed/live qualification.
+Scene timeline duration is retained separately from the selected clip length, including across
+reloads. The missing Story/Gateway counterpart contract must define discovery identity and freshness,
+each control's type and value domain, scene-versus-clip duration, immutable job binding,
+unknown-field round-trip and unsupported/refusal reporting. No wire schema or model/duration ID is
+invented here.
 
 ## Install
 
@@ -168,11 +139,11 @@ There is no build step.
 
 ## Notes
 
-- The extension works with a running Story Studio workspace.
-- Finished videos are ingested into their Story Studio scenes.
-- The queue is designed to survive closing and reopening the side panel.
-- Interrupted fresh-image or paid-video work requires explicit review before it
-  can be regenerated or resubmitted. Known submitted media IDs resume polling
-  and download/ingest without a duplicate request.
-- Fleet telemetry is opt-in and signed. With queue-control consent it can only
-  pause after the current item, resume its own pause, or clear pending work.
+- Works with a running Story Studio workspace; finished videos are ingested into their scenes.
+- The queue survives closing and reopening the side panel.
+- Interrupted fresh-image or paid-video work needs explicit review before it can be regenerated or
+  resubmitted; known media IDs resume polling and ingest without a duplicate request.
+- Fleet telemetry is opt-in and signed. With queue-control consent it can only pause after the
+  current item, resume its own pause, or clear pending work.
+- Offline checks are recorded separately from live browser/provider evidence. Real Chrome and
+  provider qualification is Stack's work, and a source checkpoint does not authorise it.
