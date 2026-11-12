@@ -51,8 +51,14 @@ test('rejects malformed jobs before they reach the queue', () => {
   assert.throws(() => gatewayJobToItem({ ...JOB, flowProjectId: '' }, {}), /Flow project id/);
   assert.throws(() => normalizeGatewayJob({ ...JOB, videoMode: 'unknown' }), /source/);
   assert.throws(() => normalizeGatewayJob({ ...JOB, aspectRatio: 'square' }), /aspect/);
-  assert.throws(() => normalizeGatewayJob({ ...JOB, aspectRatio: '9:16' }), /aspect/);
   assert.throws(() => normalizeGatewayJob({ ...JOB, durationSec: null }), /duration/);
+});
+
+test('a 9:16 claim is refused before it can reach the queue', () => {
+  // Flow's 9:16 value has never been observed, so accepting it would only claim
+  // work that cannot submit.
+  assert.throws(() => normalizeGatewayJob({ ...JOB, aspectRatio: '9:16' }), /only 16:9 is captured/);
+  assert.throws(() => gatewayJobToItem({ ...JOB, aspectRatio: '9:16' }, {}), /only 16:9 is captured/);
 });
 
 test('deduplicates a claimed job that is already queued', () => {
