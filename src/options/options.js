@@ -4,6 +4,8 @@ import {
   saveSettings,
   getCredentials,
   saveCredentials,
+  getGatewayToken,
+  saveGatewayToken,
 } from '../lib/config.js';
 import { StudioClient } from '../lib/story-studio.js';
 import { initTheme, setTheme } from '../lib/theme.js';
@@ -11,11 +13,10 @@ import { initTheme, setTheme } from '../lib/theme.js';
 const $ = (id) => document.getElementById(id);
 const FIELDS = [
   'theme',
+  'mode',
   'studioBaseUrl',
-  'flowWorkspaceUrl',
-  'providerAccountProfileId',
-  'humanDelayMinSec',
-  'humanDelayMaxSec',
+  'gatewayUrl',
+  'gatewayWorkerId',
 ];
 
 let autoSaveTimer = null;
@@ -47,11 +48,27 @@ async function save() {
         username: $('studioUsername').value.trim(),
         password: $('studioPassword').value,
       }),
+      saveGatewayToken($('gatewayToken').value),
     ]);
+    await chrome.runtime.sendMessage({ type: 'gatewayModeChanged' }).catch(() => {});
     showStatus('✓ Saved', 'ok');
   } catch (error) {
     showStatus(`Couldn’t save: ${error.message}`, 'failed');
   }
+}
+
+function refreshMode() {
+  const gateway = $('mode').value === 'gateway';
+  $('studioSection').hidden = gateway;
+  $('gatewaySection').hidden = !gateway;
+}
+
+// Flow lives at a fixed address, and its origin permission is already declared.
+// A moved Flow deployment is a code change, not a settings field.
+async function requestFlowAccess() {
+  const origins = ['https://flow.google.com/*'];
+  if (await chrome.permissions.contains({ origins }).catch(() => false)) return;
+  await chrome.permissions.request({ origins }).catch(() => {});
 }
 
 function scheduleSave() {
@@ -119,34 +136,6 @@ async function grantAccess() {
   }
 }
 
-async function refreshFlowGrant() {
-  const status = $('flowGrantStatus');
-  const url = $('flowWorkspaceUrl').value.trim();
-  const pattern = originPattern(url);
-  if (!pattern) {
-    status.textContent = 'Enter a full https:// address.';
-    status.style.color = 'var(--danger)';
-    return;
-  }
-  const granted = await chrome.permissions.contains({ origins: [pattern] }).catch(() => false);
-  status.textContent = granted ? '✓ Site access granted.' : 'Site access not granted yet.';
-  status.style.color = granted ? 'var(--ok)' : 'var(--warning)';
-}
-
-async function grantFlow() {
-  const status = $('flowGrantStatus');
-  const pattern = originPattern($('flowWorkspaceUrl').value.trim());
-  if (!pattern) return refreshFlowGrant();
-  try {
-    const granted = await chrome.permissions.request({ origins: [pattern] });
-    status.textContent = granted ? '✓ Site access granted.' : 'Site access request was declined.';
-    status.style.color = granted ? 'var(--ok)' : 'var(--danger)';
-  } catch (error) {
-    status.textContent = `Couldn’t grant site access: ${error.message}`;
-    status.style.color = 'var(--danger)';
-  }
-}
-
 async function testConnection() {
   const status = $('testStatus');
   const url = $('studioBaseUrl').value.trim();
@@ -201,9 +190,10 @@ async function signIn() {
 
 async function load() {
   await initTheme();
-  const [settings, credentials] = await Promise.all([
+  const [settings, credentials, gatewayToken] = await Promise.all([
     getSettings(),
     getCredentials(),
+    getGatewayToken(),
   ]);
   for (const field of FIELDS) {
     const element = $(field);
@@ -212,6 +202,7 @@ async function load() {
   }
   $('studioUsername').value = credentials.username || '';
   $('studioPassword').value = credentials.password || '';
+  $('gatewayToken').value = gatewayToken || '';
 
   $('theme').addEventListener('change', () => setTheme($('theme').value));
   $('save').addEventListener('click', save);
@@ -219,10 +210,12 @@ async function load() {
   $('grantAccess').addEventListener('click', grantAccess);
   $('testConnection').addEventListener('click', testConnection);
   $('studioBaseUrl').addEventListener('input', refreshGrantStatus);
-  $('flowWorkspaceUrl').addEventListener('input', refreshFlowGrant);
-  $('grantFlow').addEventListener('click', grantFlow);
+  $('mode').addEventListener('change', () => {
+    refreshMode();
+    if ($('mode').value !== 'gateway') requestFlowAccess();
+  });
   refreshGrantStatus();
-  refreshFlowGrant();
+  refreshMode();
 
   for (const id of [...FIELDS, 'studioUsername', 'studioPassword']) {
     const element = $(id);

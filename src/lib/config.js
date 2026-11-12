@@ -2,15 +2,17 @@ import { FALLBACK_VIDEO_MODELS, defaultVideoModel, modelsForMode, upgradeStoredV
 
 const DEFAULT_VIDEO_MODEL = defaultVideoModel('image');
 
+// Flow lives at a fixed address now: a move is a code change, not a setting.
+export const FLOW_WORKSPACE_URL = 'https://flow.google.com';
+
 export const DEFAULTS = {
   theme: 'system',
   mode: 'studio',
   studioBaseUrl: 'http://localhost:8766',
   flowProjectId: '',
   flowProjectName: '',
-  // Where Google Flow lives. Google moved it once already (labs.google/fx →
-  // flow.google.com); the next move is a Settings edit, not a code change.
-  flowWorkspaceUrl: 'https://flow.google.com',
+  // Where Google Flow lives. Fixed in code since the Flow settings UI was removed.
+  flowWorkspaceUrl: FLOW_WORKSPACE_URL,
   // 'text' generates directly from the motion prompt; 'image' starts from a
   // scene/uploaded/generated image. The current Flow app uses a different model
   // key for each, so the mode and model move together.
@@ -49,16 +51,10 @@ export function normalizeFlowProjectId(value) {
   return match ? match[1].toLowerCase() : raw;
 }
 
-// Only the https origin is kept: the worker builds the tab URL, the tab-match
-// pattern, and the "is this really a Flow tab" guard from it.
-export function normalizeFlowWorkspaceUrl(value) {
-  try {
-    const url = new URL(String(value || '').trim());
-    if (url.protocol === 'https:' && url.hostname) return url.origin;
-  } catch {
-    /* fall through to the default */
-  }
-  return DEFAULTS.flowWorkspaceUrl;
+// The stored flowWorkspaceUrl key stays readable for compatibility but always
+// normalizes to the fixed origin.
+export function normalizeFlowWorkspaceUrl() {
+  return FLOW_WORKSPACE_URL;
 }
 
 export function flowWorkspace(settings) {

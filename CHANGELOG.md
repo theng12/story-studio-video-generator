@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.20 — 2026-11-12
+
+- Google Flow settings were removed; the address is fixed.
+- The options page now keeps only the mode/provider, the Gateway Studio block, and the mode-conditional Story Studio connection.
+
 ## 1.3.19 — 2026-11-12
 
 - Fleet Hub was removed.

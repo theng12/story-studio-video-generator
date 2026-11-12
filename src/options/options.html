@@ -44,7 +44,18 @@
       </section>
 
       <section class="settings-section">
-        <span class="settings-section-title">Story Studio connection</span>
+        <span class="settings-section-title">Mode</span>
+        <label>Provider
+          <select id="mode">
+            <option value="studio">Story Studio</option>
+            <option value="standalone">Standalone</option>
+            <option value="gateway">Gateway Studio</option>
+          </select>
+        </label>
+      </section>
+
+      <section class="settings-section" id="studioSection">
+        <span class="settings-section-title">Story Studio connection <span class="muted">(outside Gateway Studio)</span></span>
         <label class="connection-url">Server URL
           <input id="studioBaseUrl" type="url" placeholder="http://localhost:8766" />
         </label>
@@ -70,32 +81,18 @@
         <p id="loginStatus" class="connection-note" aria-live="polite"></p>
       </section>
 
-      <section class="settings-section">
-        <span class="settings-section-title">Google Flow</span>
-        <label class="connection-url">Flow address
-          <input id="flowWorkspaceUrl" type="text" placeholder="https://flow.google.com" />
+      <section class="settings-section" id="gatewaySection">
+        <span class="settings-section-title">Gateway Studio</span>
+        <label>Gateway address
+          <input id="gatewayUrl" type="url" placeholder="http://127.0.0.1:8787" />
         </label>
-        <p class="hint connection-copy">Where Google Flow lives. If Google moves it again, paste the new address here and grant site access — no code change needed.</p>
-        <label>Shared account profile ID <span class="muted">(optional, up to 160 characters)</span>
-          <input id="providerAccountProfileId" maxlength="160" aria-describedby="accountProfileHint" />
+        <label>Worker ID
+          <input id="gatewayWorkerId" maxlength="160" placeholder="Assigned on first claim" />
         </label>
-        <p id="accountProfileHint" class="hint">Use the same Relay-assigned ID in the image and video extensions for one account/profile. This label does not prove sign-in or a credit balance.</p>
-        <label>Pause between generations: minimum seconds (0–3600)
-          <input id="humanDelayMinSec" type="number" min="0" max="3600" step="1" />
+        <label>Worker token
+          <input id="gatewayToken" type="password" autocomplete="off" placeholder="Bearer token" />
         </label>
-        <label>Pause between generations: maximum seconds (0–3600)
-          <input id="humanDelayMaxSec" type="number" min="0" max="3600" step="1" />
-        </label>
-        <p class="hint">New settings default to a random 5–15 seconds between generations. Set both values to 0 for no pause. Existing custom values stay saved; provider cooldowns remain separate.</p>
-        <div class="connection-actions">
-          <button id="grantFlow" class="btn" type="button">Grant site access</button>
-        </div>
-        <div class="connection-feedback">
-          <span id="flowGrantStatus" class="connection-note" aria-live="polite"></span>
-        </div>
       </section>
-
-      <!-- Workspace and model controls stay beside their batch in the side panel. -->
 
       <div class="row settings-footer">
         <span id="status" class="muted small" aria-live="polite"></span>

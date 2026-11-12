@@ -35,7 +35,7 @@ for (const [minimum, maximum] of [[0, 0], [5, 60], [23, 91], [1.25, 2.75]]) {
   });
 }
 
-test('root settings load and save the same pacing and account fields', async () => {
+test('root settings load and save the same mode and gateway fields', async () => {
   await settingsFixture(async () => {
     const nodes = new Map();
     const checkboxes = new Set();
@@ -50,24 +50,23 @@ test('root settings load and save the same pacing and account fields', async () 
     const source = (await readFile(new URL('../src/options/options.js', import.meta.url), 'utf8'))
       .replace(/^import[\s\S]*?from ['"][^'"]+['"];\n/gm, '');
     const sandbox = { document, DEFAULTS, getSettings, saveSettings, initTheme: async () => {},
-      getCredentials: async () => ({}),
-      saveCredentials: async () => {},
+      getCredentials: async () => ({}), getGatewayToken: async () => '',
+      saveCredentials: async () => {}, saveGatewayToken: async () => {},
       setTimeout: () => 0, clearTimeout() {}, URL,
-      chrome: { permissions: { contains: async () => false }, storage: { local: { get: async () => ({}) } },
+      chrome: { permissions: { contains: async () => true }, storage: { local: { get: async () => ({}) } },
         runtime: { sendMessage: async () => ({}) } },
     };
     await vm.runInNewContext(source + '\nload()', sandbox);
-    assert.equal(document.getElementById('humanDelayMinSec').value, '5');
-    assert.equal(document.getElementById('humanDelayMaxSec').value, '15');
-    document.getElementById('humanDelayMinSec').value = '0';
-    document.getElementById('humanDelayMaxSec').value = '0';
-    document.getElementById('providerAccountProfileId').value = 'shared-profile';
+    assert.equal(document.getElementById('mode').value, 'studio');
+    document.getElementById('mode').value = 'gateway';
+    document.getElementById('gatewayUrl').value = 'http://127.0.0.1:9000';
+    document.getElementById('gatewayWorkerId').value = 'worker-1';
     await vm.runInNewContext('save()', sandbox);
     assert.match(document.getElementById('status').textContent, /Saved/);
     const saved = await getSettings();
-    assert.equal(saved.humanDelayMinSec, 0);
-    assert.equal(saved.humanDelayMaxSec, 0);
-    assert.equal(saved.providerAccountProfileId, 'shared-profile');
+    assert.equal(saved.mode, 'gateway');
+    assert.equal(saved.gatewayUrl, 'http://127.0.0.1:9000');
+    assert.equal(saved.gatewayWorkerId, 'worker-1');
   });
 });
 
