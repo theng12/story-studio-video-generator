@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { FLEET_QUEUE_ACTIONS, classifyInterruptedItem, eligibleVideoScenes, hasActiveDuplicate, isAllowedFleetQueueAction, migrateStoredQueue, standaloneDownloadPath } from '../src/lib/video-rules.js';
+import { classifyInterruptedItem, eligibleVideoScenes, hasActiveDuplicate, migrateStoredQueue, standaloneDownloadPath } from '../src/lib/video-rules.js';
 import { readFile } from 'node:fs/promises';
 
 test('quarantines interrupted fresh-image submission without a media id', () => {
@@ -42,7 +42,6 @@ test('selects only Story Studio scenes eligible for video', () => {
   assert.equal(eligible[1].imagePrompt, 'a wide shot');
 });
 test('uses a stable standalone Downloads path', () => assert.equal(standaloneDownloadPath('standalone_abc_01'), 'StoryStudioVideos/Standalone/standalone_abc_01.mp4'));
-test('allows only consent-scoped Fleet queue commands', () => { assert.deepEqual(FLEET_QUEUE_ACTIONS, ['pause_after_current', 'resume_hub_pause', 'clear_pending']); assert.equal(isAllowedFleetQueueAction('change_model'), false); });
 test('removes proven-dead video state', async () => {
   const sources = await Promise.all(['../src/lib/config.js', '../src/lib/flow-exec.js', '../src/background.js'].map((path) => readFile(new URL(path, import.meta.url), 'utf8')));
   for (const source of sources) { assert.doesNotMatch(source, /\bvideoProvider\b/); assert.doesNotMatch(source, /\bsaveTarget\b/); assert.doesNotMatch(source, /\bworkflowId\b/); assert.doesNotMatch(source, /\bremainingCredits\b/); }

@@ -37,7 +37,7 @@ async function waitFor(predicate) {
   throw new Error('Video background fixture timed out.');
 }
 async function boot({ local = {}, sync, rows = new Map(), mode = 'gateway', job = JOB, answers = [{ ok: true }], health = {}, failAnswer = { ok: true }, onClaim, onFlow, onTelemetry, claimReply, lostClaim = false, noTabs = false, storySave, assetReply, onTabs, flowReplies = {} } = {}) {
-  sync ||= { videoSettings: { mode, gatewayUrl: 'http://127.0.0.1:49873', gatewayWorkerId: '', flowProjectId: PROJECT, humanDelayMinSec: 0, humanDelayMaxSec: 0, fleetEnabled: false } };
+  sync ||= { videoSettings: { mode, gatewayUrl: 'http://127.0.0.1:49873', gatewayWorkerId: '', flowProjectId: PROJECT, humanDelayMinSec: 0, humanDelayMaxSec: 0 } };
   const configuredToken = local.gatewayWorkerToken ?? 'fixture-token';
   // Isolate startup recovery from the explicit manager tick each test requests.
   local.gatewayWorkerToken = '';
@@ -484,7 +484,7 @@ function pacingClock(t) {
 }
 function pacedSync(mode = 'standalone', extra = {}) {
   return { videoSettings: { mode, gatewayUrl: 'http://127.0.0.1:49873', flowProjectId: PROJECT,
-    humanDelayMinSec: 5, humanDelayMaxSec: 15, fleetEnabled: false, ...extra } };
+    humanDelayMinSec: 5, humanDelayMaxSec: 15, ...extra } };
 }
 function pacedRow(id = 'paced-video', extra = {}) {
   return { id, label: id, status: 'pending', phase: 'queued', videoMode: 'text',

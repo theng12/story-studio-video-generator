@@ -3,13 +3,12 @@ import {
   saveSettings,
   normalizeFlowProjectId,
   flowWorkspace,
-  getFleetCredentials,
   getGatewayToken,
 } from './lib/config.js';
 import { StudioClient } from './lib/story-studio.js';
 import { flowCommand } from './lib/flow-exec.js';
 import { inventoryResult, resolveVideoModel, snapshotVideoModel } from './lib/video-models.js';
-import { classifyInterruptedItem, hasActiveDuplicate, isAllowedFleetQueueAction, migrateStoredQueue, standaloneDownloadPath } from './lib/video-rules.js';
+import { classifyInterruptedItem, hasActiveDuplicate, migrateStoredQueue, standaloneDownloadPath } from './lib/video-rules.js';
 import { gatewayJobToItem, isGatewayJobQueued } from './lib/gateway-worker.js';
 import { claimGatewayJob, gatewayBinding, reportGatewayFailure, reportGatewayProgress, reportGatewayResult, reportGatewayTelemetry, testGateway } from './lib/gateway-client.js';
 import { normalizeWorkerControl, observedAccount, observedQuote, workerObservation } from './lib/gateway-manager.js';
@@ -22,14 +21,6 @@ const STATUS_KEY = 'lastVideoStatus';
 const NEXT_RUN_KEY = 'nextVideoProviderRunAt';
 const COOLDOWN_KEY = 'videoProviderCooldownUntil';
 const ALARM = 'videoQueueTick';
-const FLEET_ALARM = 'videoFleetHeartbeat';
-const FLEET_IDENTITY_KEY = 'videoFleetIdentity';
-const FLEET_RESPONSE_NONCES_KEY = 'videoFleetResponseNonces';
-const FLEET_COMMAND_RECEIPTS_KEY = 'videoFleetCommandReceipts';
-const FLEET_HUB_PAUSE_KEY = 'videoFleetHubPause';
-const FLEET_PROTOCOL_VERSION = 2;
-const FLEET_PATH = '/api/v2/agents/heartbeat';
-const FLEET_MAX_AGE_MS = 60 * 1000;
 const GATEWAY_ALARM = 'gatewayWorkerTick';
 const GATEWAY_REFERENCES_KEY = 'gatewayJobReferences';
 const GATEWAY_CLAIM_KEY = 'gatewayUnsettledClaim';
@@ -38,7 +29,6 @@ const GATEWAY_CONTROL_KEY = 'gatewayAppliedControl';
 let claiming = false;
 let processing = false;
 let sequence = 0;
-const fleetBootSessionId = createRandomId();
 
 const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 const isPaused = async () => Boolean((await chrome.storage.local.get(PAUSED_KEY))[PAUSED_KEY]);
@@ -51,81 +41,11 @@ function clearAlarm() {
   chrome.alarms?.clear(ALARM);
 }
 
-function createFleetAlarm() {
-  chrome.alarms?.create(FLEET_ALARM, { periodInMinutes: 1 });
-}
-
 function createRandomId() {
   if (globalThis.crypto?.randomUUID) return crypto.randomUUID();
   const bytes = new Uint8Array(16);
   crypto.getRandomValues(bytes);
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
-}
-
-function fleetText(value, limit = 240) {
-  return String(value || '')
-    .replace(/[\u0000-\u001f\u007f]/g, ' ')
-    .replace(/[<>&]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, limit);
-}
-
-function bytesToHex(bytes) {
-  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
-}
-
-async function fleetSignature(secret, timestamp, nonce, bodyText) {
-  const encoder = new TextEncoder();
-  const key = await crypto.subtle.importKey(
-    'raw',
-    encoder.encode(secret),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign']
-  );
-  const canonical = `POST\n${FLEET_PATH}\n${timestamp}\n${nonce}\n${bodyText}`;
-  return bytesToHex(new Uint8Array(await crypto.subtle.sign('HMAC', key, encoder.encode(canonical))));
-}
-
-function fleetSignaturesMatch(actual, expected) {
-  const left = String(actual || '').toLowerCase();
-  const right = String(expected || '').toLowerCase();
-  if (!/^[0-9a-f]{64}$/.test(left) || left.length !== right.length) return false;
-  let difference = 0;
-  for (let index = 0; index < left.length; index += 1) difference |= left.charCodeAt(index) ^ right.charCodeAt(index);
-  return difference === 0;
-}
-
-async function getFleetIdentity() {
-  const stored = await chrome.storage.local.get(FLEET_IDENTITY_KEY);
-  const existing = stored[FLEET_IDENTITY_KEY];
-  if (existing?.agentId && existing?.machineId) return existing;
-  const identity = { agentId: createRandomId(), machineId: createRandomId() };
-  await chrome.storage.local.set({ [FLEET_IDENTITY_KEY]: identity });
-  return identity;
-}
-
-function fleetRevision(queue, paused, cooldownUntil) {
-  const canonical = JSON.stringify({
-    paused: Boolean(paused),
-    cooldownUntil: Number(cooldownUntil) || 0,
-    queue: queue
-      .map((item) => ({
-        id: String(item.id || ''),
-        status: String(item.status || ''),
-        phase: String(item.phase || ''),
-        media: Boolean(item.videoMediaId),
-        submitted: Boolean(item.submissionStartedAt),
-      }))
-      .sort((left, right) => left.id.localeCompare(right.id)),
-  });
-  let hash = 2166136261;
-  for (let index = 0; index < canonical.length; index += 1) {
-    hash ^= canonical.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
 }
 
 async function workerManagerTelemetry() {
@@ -145,229 +65,6 @@ async function workerManagerTelemetry() {
     },
     inventory: stored[FLOW_MODEL_INVENTORY_KEY] || null,
   };
-}
-
-async function fleetQueueState() {
-  const [queue, paused, stored, hubPause] = await Promise.all([
-    getQueue(),
-    isPaused(),
-    chrome.storage.local.get([COOLDOWN_KEY, NEXT_RUN_KEY, STATUS_KEY]),
-    chrome.storage.local.get(FLEET_HUB_PAUSE_KEY),
-  ]);
-  const counts = { pending: 0, running: 0, done: 0, failed: 0, ambiguous: 0 };
-  for (const item of queue) {
-    if (Object.hasOwn(counts, item.status)) counts[item.status] += 1;
-  }
-  const current = queue.find((item) => item.status === 'running');
-  const cooldownUntil = Number(stored[COOLDOWN_KEY]) || 0;
-  const needsLocalReview = counts.ambiguous > 0;
-  let state = 'idle';
-  if (needsLocalReview) state = 'needs-local-review';
-  else if (cooldownUntil > Date.now()) state = 'cooldown';
-  else if (paused) state = hubPause[FLEET_HUB_PAUSE_KEY] ? 'paused-by-hub' : 'paused-locally';
-  else if (counts.running) state = 'running';
-  else if (counts.pending) state = 'queued';
-  return {
-    queue,
-    paused,
-    cooldownUntil,
-    nextRunAt: Number(stored[NEXT_RUN_KEY]) || 0,
-    needsLocalReview,
-    hubPause: hubPause[FLEET_HUB_PAUSE_KEY] || null,
-    revision: fleetRevision(queue, paused, cooldownUntil),
-    snapshot: {
-      state,
-      counts,
-      current: current
-        ? { phase: fleetText(current.phase, 80), label: fleetText(current.label, 120) }
-        : null,
-      cooldownUntil,
-      nextRunAt: Number(stored[NEXT_RUN_KEY]) || 0,
-      needsLocalReview,
-      lastStatus: stored[STATUS_KEY]
-        ? { kind: fleetText(stored[STATUS_KEY].kind, 24), text: fleetText(stored[STATUS_KEY].text, 240) }
-        : null,
-    },
-  };
-}
-
-async function getFleetCommandReceipts() {
-  const stored = await chrome.storage.local.get(FLEET_COMMAND_RECEIPTS_KEY);
-  return Array.isArray(stored[FLEET_COMMAND_RECEIPTS_KEY]) ? stored[FLEET_COMMAND_RECEIPTS_KEY] : [];
-}
-
-async function saveFleetCommandReceipt(receipt) {
-  const receipts = await getFleetCommandReceipts();
-  const next = [...receipts.filter((item) => item.commandId !== receipt.commandId), receipt].slice(-256);
-  await chrome.storage.local.set({ [FLEET_COMMAND_RECEIPTS_KEY]: next });
-  return receipt;
-}
-
-async function rememberFleetResponseNonce(nonce) {
-  const stored = await chrome.storage.local.get(FLEET_RESPONSE_NONCES_KEY);
-  const nonces = Array.isArray(stored[FLEET_RESPONSE_NONCES_KEY]) ? stored[FLEET_RESPONSE_NONCES_KEY] : [];
-  if (nonces.includes(nonce)) throw new Error('Fleet response replay rejected.');
-  await chrome.storage.local.set({ [FLEET_RESPONSE_NONCES_KEY]: [...nonces, nonce].slice(-256) });
-}
-
-function fleetHubEndpoint(baseUrl) {
-  const endpoint = new URL(FLEET_PATH, `${String(baseUrl || '').replace(/\/$/, '')}/`);
-  if (!['http:', 'https:'].includes(endpoint.protocol)) throw new Error('Fleet Hub URL must use HTTP or HTTPS.');
-  return endpoint;
-}
-
-async function fleetHostAccessGranted(baseUrl) {
-  const endpoint = fleetHubEndpoint(baseUrl);
-  if (['localhost', '127.0.0.1', '[::1]'].includes(endpoint.hostname)) return true;
-  return chrome.permissions.contains({ origins: [`${endpoint.protocol}//${endpoint.hostname}/*`] });
-}
-
-async function runFleetCommand(command, state, identity) {
-  const commandId = fleetText(command?.commandId || command?.id, 160);
-  const action = fleetText(command?.action, 80);
-  const receipt = { commandId, action, at: Date.now(), status: 'rejected' };
-  if (!commandId || !action) return { ...receipt, reason: 'Invalid command.' };
-  if (!isAllowedFleetQueueAction(action)) return { ...receipt, reason: 'Unsupported Fleet action.' };
-  if (!Number.isInteger(command.expectedQueueRevision) || command.expectedQueueRevision !== state.revision) {
-    return { ...receipt, reason: 'Queue revision no longer matches.' };
-  }
-  if (fleetText(command.targetAgentId, 160) !== identity.agentId) {
-    return { ...receipt, reason: 'Command targets another agent.' };
-  }
-  if (fleetText(command.targetSessionId, 160) !== fleetBootSessionId) {
-    return { ...receipt, reason: 'Command targets a stale agent session.' };
-  }
-  // Fleet v2 uses epoch milliseconds so every MV3 agent can compare command
-  // lifetimes without locale-dependent date parsing.
-  const createdAt = Number(command.createdAt);
-  const expiry = Number(command.expiresAt);
-  const now = Date.now();
-  if (
-    !Number.isFinite(createdAt) ||
-    !Number.isFinite(expiry) ||
-    createdAt > now + FLEET_MAX_AGE_MS ||
-    expiry <= createdAt ||
-    expiry - createdAt > 15 * 60 * 1000
-  ) {
-    return { ...receipt, reason: 'Command lifetime is invalid.' };
-  }
-  if (expiry < now) return { ...receipt, status: 'expired', reason: 'Command expired.' };
-
-  if (action === 'pause_after_current') {
-    await chrome.storage.local.set({
-      [PAUSED_KEY]: true,
-      [FLEET_HUB_PAUSE_KEY]: { commandId, sessionId: fleetBootSessionId, at: Date.now() },
-    });
-    return { ...receipt, status: 'succeeded', queueRevision: (await fleetQueueState()).revision };
-  }
-
-  if (action === 'resume_hub_pause') {
-    if (!state.hubPause || !state.paused) return { ...receipt, reason: 'The queue is not paused by Fleet Hub.' };
-    if (state.cooldownUntil > Date.now()) return { ...receipt, reason: 'Provider cooldown remains active.' };
-    if (state.needsLocalReview) return { ...receipt, reason: 'A paid submission needs local review.' };
-    await chrome.storage.local.remove([PAUSED_KEY, FLEET_HUB_PAUSE_KEY]);
-    createAlarm();
-    processQueue();
-    return { ...receipt, status: 'succeeded', queueRevision: (await fleetQueueState()).revision };
-  }
-
-  if (action === 'clear_pending') {
-    await clearQueue();
-    return { ...receipt, status: 'succeeded', queueRevision: (await fleetQueueState()).revision };
-  }
-
-  return { ...receipt, reason: 'Unsupported Fleet action.' };
-}
-
-async function applyFleetCommands(commands, identity) {
-  const settings = await getSettings();
-  if (!settings.fleetQueueControlConsent || !Array.isArray(commands)) return [];
-  const receipts = [];
-  for (const command of commands.slice(0, 20)) {
-    const commandId = fleetText(command?.commandId || command?.id, 160);
-    const prior = (await getFleetCommandReceipts()).find((item) => item.commandId === commandId);
-    if (prior) {
-      receipts.push(prior);
-      continue;
-    }
-    const receipt = await runFleetCommand(command, await fleetQueueState(), identity);
-    await saveFleetCommandReceipt(receipt);
-    receipts.push(receipt);
-  }
-  return receipts;
-}
-
-async function sendFleetHeartbeat({ allowCommands = true, forceTelemetry = false } = {}) {
-  const [settings, credentials] = await Promise.all([getSettings(), getFleetCredentials()]);
-  if ((!settings.fleetEnabled || !settings.fleetTelemetryConsent) && !forceTelemetry) {
-    return { ok: false, skipped: 'Fleet telemetry is disabled.' };
-  }
-  if (!credentials.pairingSecret) return { ok: false, skipped: 'A local Fleet pairing secret is required.' };
-  if (!(await fleetHostAccessGranted(settings.fleetHubUrl))) return { ok: false, skipped: 'Fleet Hub site access has not been granted.' };
-  const [identity, state, commandResults] = await Promise.all([
-    getFleetIdentity(),
-    fleetQueueState(),
-    getFleetCommandReceipts(),
-  ]);
-  const body = {
-    protocolVersion: FLEET_PROTOCOL_VERSION,
-    agentId: identity.agentId,
-    machineId: identity.machineId,
-    sessionId: fleetBootSessionId,
-    extensionType: 'video',
-    machineName: fleetText(settings.fleetMachineName, 80),
-    queueRevision: state.revision,
-    snapshot: state.snapshot,
-    capabilities: { telemetry: true, queueControls: ['pause_after_current', 'resume_hub_pause', 'clear_pending'] },
-    consent: { telemetry: settings.fleetTelemetryConsent === true, queueControl: settings.fleetQueueControlConsent === true },
-    commandResults: commandResults.slice(-64),
-  };
-  const bodyText = JSON.stringify(body);
-  const timestamp = String(Date.now());
-  const nonce = createRandomId();
-  const signature = await fleetSignature(credentials.pairingSecret, timestamp, nonce, bodyText);
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15000);
-  let response;
-  try {
-    response = await fetch(fleetHubEndpoint(settings.fleetHubUrl), {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Fleet-Timestamp': timestamp,
-        'X-Fleet-Nonce': nonce,
-        'X-Fleet-Signature': signature,
-      },
-      body: bodyText,
-      signal: controller.signal,
-    });
-  } finally {
-    clearTimeout(timeout);
-  }
-  const responseText = await response.text();
-  if (!response.ok) throw new Error(`Fleet Hub rejected heartbeat (${response.status}).`);
-  const responseTimestamp = response.headers.get('X-Fleet-Timestamp');
-  const responseNonce = response.headers.get('X-Fleet-Nonce');
-  const responseSignature = response.headers.get('X-Fleet-Signature');
-  if (!responseTimestamp || !responseNonce || !responseSignature) throw new Error('Fleet Hub response is not signed.');
-  if (!/^\d{10,}$/.test(responseTimestamp) || Math.abs(Date.now() - Number(responseTimestamp)) > FLEET_MAX_AGE_MS) {
-    throw new Error('Fleet Hub response is stale.');
-  }
-  const expectedSignature = await fleetSignature(credentials.pairingSecret, responseTimestamp, responseNonce, responseText);
-  if (!fleetSignaturesMatch(responseSignature, expectedSignature)) throw new Error('Fleet Hub response signature is invalid.');
-  await rememberFleetResponseNonce(responseNonce);
-  let payload;
-  try {
-    payload = JSON.parse(responseText);
-  } catch {
-    throw new Error('Fleet Hub returned invalid JSON.');
-  }
-  if (payload?.protocolVersion !== FLEET_PROTOCOL_VERSION) throw new Error('Fleet Hub protocol version is incompatible.');
-  const applied = allowCommands ? await applyFleetCommands(payload.commands, identity) : [];
-  await chrome.storage.local.set({
-    lastVideoFleetStatus: { ok: true, timestamp: Date.now(), appliedCommands: applied },
-  });
-  return { ok: true, commands: applied.length };
 }
 
 async function writeStatus(text, kind = 'info', details = {}) {
@@ -1035,9 +732,7 @@ async function enqueueScenes(payload) {
   }
   await setQueue(queue);
   if (added) {
-    // A local enqueue is an explicit user decision, so it must not leave a
-    // stale Hub-owned pause marker that could later be resumed remotely.
-    await chrome.storage.local.remove([PAUSED_KEY, FLEET_HUB_PAUSE_KEY]);
+    await chrome.storage.local.remove(PAUSED_KEY);
     createAlarm();
     processQueue();
   }
@@ -1096,7 +791,7 @@ async function enqueueStandalone(payload) {
     added += 1;
   }
   await setQueue(queue);
-  await chrome.storage.local.remove([PAUSED_KEY, FLEET_HUB_PAUSE_KEY]);
+  await chrome.storage.local.remove(PAUSED_KEY);
   createAlarm();
   processQueue();
   return { ok: true, added, skipped };
@@ -1338,13 +1033,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       reply(
         chrome.storage.local
           .set({ [PAUSED_KEY]: true })
-          .then(() => chrome.storage.local.remove(FLEET_HUB_PAUSE_KEY))
           .then(() => ({ ok: true }))
       );
       return true;
     case 'resumeQueue':
       reply(
-        chrome.storage.local.remove([PAUSED_KEY, COOLDOWN_KEY, FLEET_HUB_PAUSE_KEY]).then(() => {
+        chrome.storage.local.remove([PAUSED_KEY, COOLDOWN_KEY]).then(() => {
           createAlarm();
           processQueue();
           return { ok: true };
@@ -1375,13 +1069,6 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         })
       );
       return true;
-    case 'fleetTest':
-      reply(sendFleetHeartbeat({ allowCommands: false, forceTelemetry: true }));
-      return true;
-    case 'fleetSettingsChanged':
-      createFleetAlarm();
-      reply(Promise.resolve({ ok: true }));
-      return true;
     case 'gatewayTest':
       reply(connectGateway().then(({ health }) => health));
       return true;
@@ -1399,13 +1086,6 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 chrome.alarms?.onAlarm?.addListener((alarm) => {
   if (alarm.name === ALARM) processQueue().then(() => gatewayTick()).catch(() => {});
   if (alarm.name === GATEWAY_ALARM) gatewayTick().catch(() => {});
-  if (alarm.name === FLEET_ALARM) {
-    sendFleetHeartbeat().catch(async (error) => {
-      await chrome.storage.local.set({
-        lastVideoFleetStatus: { ok: false, timestamp: Date.now(), error: fleetText(error?.message || error) },
-      });
-    });
-  }
 });
 
 try {
@@ -1416,7 +1096,6 @@ try {
 
 const startupReady = recoverInterruptedJobs();
 startupReady.then(() => {
-  createFleetAlarm();
   syncGatewayAlarm();
   processQueue();
 }).catch(() => writeStatus('Video recovery failed; retained work is held.', 'err'));

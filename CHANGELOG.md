@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.19 — 2026-11-12
+
+- Fleet Hub was removed.
+
 ## 1.3.18 — 2026-11-12
 
 - Veo 3.1 - Lite no longer borrows Omni Flash 1.2's rate: Flow's own panel quoted 10 credits for one 8s 720p clip, not the 24 that rate would give, so its price now comes only from the panel line.

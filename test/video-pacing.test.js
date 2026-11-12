@@ -38,7 +38,7 @@ for (const [minimum, maximum] of [[0, 0], [5, 60], [23, 91], [1.25, 2.75]]) {
 test('root settings load and save the same pacing and account fields', async () => {
   await settingsFixture(async () => {
     const nodes = new Map();
-    const checkboxes = new Set(['fleetEnabled', 'fleetTelemetryConsent', 'fleetQueueControlConsent']);
+    const checkboxes = new Set();
     const document = { addEventListener() {}, getElementById(id) {
       if (!nodes.has(id)) {
         let value = '';
@@ -50,8 +50,8 @@ test('root settings load and save the same pacing and account fields', async () 
     const source = (await readFile(new URL('../src/options/options.js', import.meta.url), 'utf8'))
       .replace(/^import[\s\S]*?from ['"][^'"]+['"];\n/gm, '');
     const sandbox = { document, DEFAULTS, getSettings, saveSettings, initTheme: async () => {},
-      getCredentials: async () => ({}), getFleetCredentials: async () => ({}),
-      saveCredentials: async () => {}, saveFleetCredentials: async () => {},
+      getCredentials: async () => ({}),
+      saveCredentials: async () => {},
       setTimeout: () => 0, clearTimeout() {}, URL,
       chrome: { permissions: { contains: async () => false }, storage: { local: { get: async () => ({}) } },
         runtime: { sendMessage: async () => ({}) } },

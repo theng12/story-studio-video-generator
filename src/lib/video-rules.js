@@ -1,7 +1,5 @@
 const imageError = 'Fresh-image generation may have reached Flow. Inspect the Flow project before explicitly regenerating it.';
 const videoError = 'Paid video submission may have reached Flow. Inspect the Flow project before explicitly resubmitting it.';
-export const FLEET_QUEUE_ACTIONS = Object.freeze(['pause_after_current', 'resume_hub_pause', 'clear_pending']);
-export const isAllowedFleetQueueAction = (action) => FLEET_QUEUE_ACTIONS.includes(action);
 export const standaloneDownloadPath = (sceneId) => `StoryStudioVideos/Standalone/${sceneId}.mp4`;
 export function eligibleVideoScenes(review) {
   const minimum = Number(review?.animate_min_seconds) || 0;

@@ -28,11 +28,6 @@ export const DEFAULTS = {
   // A temporary service limit can either pause the queue for review or wait
   // before safely retrying work that never reached paid submission.
   providerCooldown: { autoResume: false, minutes: 15 },
-  fleetEnabled: false,
-  fleetHubUrl: 'http://localhost:8799',
-  fleetMachineName: '',
-  fleetTelemetryConsent: false,
-  fleetQueueControlConsent: false,
   lastProject: '',
   lastEpisode: '',
   // Third, separate mode: Gateway Studio claims generation jobs from this
@@ -44,7 +39,6 @@ export const DEFAULTS = {
 
 const STORAGE_KEY = 'videoSettings';
 const CREDENTIALS_KEY = 'studioCredentials';
-const FLEET_CREDENTIALS_KEY = 'videoFleetCredentials';
 
 export function normalizeFlowProjectId(value) {
   const raw = String(value || '').trim();
@@ -95,11 +89,6 @@ function normalize(settings) {
   // authorize it later. Loading settings must never silently switch models.
   const duration = Number(settings.videoDurationSec);
   settings.videoDurationSec = Number.isSafeInteger(duration) && duration > 0 ? duration : null;
-  settings.fleetEnabled = settings.fleetEnabled === true;
-  settings.fleetHubUrl = String(settings.fleetHubUrl || DEFAULTS.fleetHubUrl).trim().replace(/\/$/, '');
-  settings.fleetMachineName = String(settings.fleetMachineName || '').trim().slice(0, 80);
-  settings.fleetTelemetryConsent = settings.fleetTelemetryConsent === true;
-  settings.fleetQueueControlConsent = settings.fleetQueueControlConsent === true;
   return settings;
 }
 
@@ -135,22 +124,6 @@ export async function saveCredentials(credentials) {
     [CREDENTIALS_KEY]: {
       username: String(credentials?.username || ''),
       password: String(credentials?.password || ''),
-    },
-  });
-}
-
-export async function getFleetCredentials() {
-  const stored = await chrome.storage.local.get(FLEET_CREDENTIALS_KEY);
-  const credentials = stored[FLEET_CREDENTIALS_KEY] || {};
-  return {
-    pairingSecret: String(credentials.pairingSecret || ''),
-  };
-}
-
-export async function saveFleetCredentials(credentials) {
-  await chrome.storage.local.set({
-    [FLEET_CREDENTIALS_KEY]: {
-      pairingSecret: String(credentials?.pairingSecret || '').trim(),
     },
   });
 }

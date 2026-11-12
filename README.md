@@ -143,7 +143,5 @@ There is no build step.
 - The queue survives closing and reopening the side panel.
 - Interrupted fresh-image or paid-video work needs explicit review before it can be regenerated or
   resubmitted; known media IDs resume polling and ingest without a duplicate request.
-- Fleet telemetry is opt-in and signed. With queue-control consent it can only pause after the
-  current item, resume its own pause, or clear pending work.
 - Offline checks are recorded separately from live browser/provider evidence. Real Chrome and
   provider qualification is Stack's work, and a source checkpoint does not authorise it.
