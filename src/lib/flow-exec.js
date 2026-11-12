@@ -21,6 +21,7 @@ export async function flowCommand(command) {
       imageToVideo: 'MZZa6b',
       checkVideo: 'jwpduf',
       getMedia: 'as29s',
+      credits: 'nzlxg',
     };
     const IMAGE_MODELS = {
       'nano-banana-2': 'NARWHAL',
@@ -352,6 +353,53 @@ export async function flowCommand(command) {
       return { projectId: currentProjectId(), signedIn, url: location.href };
     };
 
+    // Captured 2026-11-09 as `rpcids=nzlxg` with args `[]`:
+    // [credits, 3, 8, 1, null, credits, [asOfSeconds, asOfNanos]]. Index 0 is the
+    // balance; the trailing pair is a server snapshot time, not a reset date.
+    const getCredits = async () => {
+      const result = await rpc(RPC.credits, [], currentProjectId());
+      const value = result?.[0];
+      if (!Number.isSafeInteger(value) || value < 0) throw new Error('Flow returned no credit balance.');
+      return { value, unit: 'credits', source: 'flow.nzlxg', observedAt: new Date().toISOString() };
+    };
+    // Observed live per clip: 4s text = 12, 3s image = 9. 6s/10s come from Flow's
+    // own UI at 720p. Any other length has no observed price, so it gets no quote.
+    const VIDEO_CREDIT_COST = Object.freeze({ 3: 9, 4: 12, 6: 18, 10: 30 });
+    // Opaque page-provided identity only — never a cookie, email or profile label.
+    const providerAccountId = () => {
+      const data = window.WIZ_global_data || {};
+      const raw = ['S06Grb', 'S09Zad', 'oPEP7c'].map((key) => data[key]).find((value) => typeof value === 'string' && value);
+      const stable = String(raw || wiz().sid || '').replace(/[^A-Za-z0-9_.:-]/g, '-').slice(0, 100);
+      return stable ? `flow.${stable}` : '';
+    };
+    // Read-only: reports the provider account, its credit balance and, when a
+    // preview is supplied, the observed price for that job. It never generates.
+    const inspectAccount = async () => {
+      wiz();
+      const accountId = providerAccountId();
+      if (!accountId) throw new Error('Flow exposed no stable account identity.');
+      const observedAt = new Date().toISOString();
+      let balance = null;
+      try {
+        balance = await getCredits();
+      } catch {
+        // Unknown stays unknown; it is never reported as zero.
+      }
+      const account = {
+        schema: 1, provider: 'flow', accountId, source: 'extension.video', observedAt,
+        connection: 'connected', signIn: 'signed_in',
+        readiness: !balance ? 'unknown' : balance.value > 0 ? 'ready' : 'not_ready',
+        balance, resetAt: null, plan: null, creditBuckets: null,
+      };
+      const preview = payload.preview;
+      const value = preview?.job ? VIDEO_CREDIT_COST[preview.job.durationSec] : undefined;
+      const quote = balance && Number.isSafeInteger(value) && /^[0-9a-f]{64}$/.test(String(preview.payloadSha256 || ''))
+        ? { provider: 'flow', accountId, payloadSha256: preview.payloadSha256, value, unit: 'credits',
+            source: 'flow.pricing.duration', observedAt }
+        : null;
+      return { account, quote };
+    };
+
     // ponytail: the current app's create-project RPC has not been captured yet.
     const createProject = async () => {
       throw new Error('Creating Flow projects is not supported on the current Flow yet — create one in Flow and pick it in the panel.');
@@ -364,9 +412,8 @@ export async function flowCommand(command) {
       checkVideo,
       getMedia,
       listVideoModels,
-      // No stable provider account/quote mapping is captured. Read-only inspection
-      // stays explicitly unbound; never derive identity from a cookie or profile.
-      inspectAccount: async () => ({ account: null, quote: null }),
+      inspectAccount,
+      getCredits,
       getContext,
       createProject,
     };

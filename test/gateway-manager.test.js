@@ -59,7 +59,14 @@ test('quote is exact-payload/same-account and never supplies an unknown balance'
   assert.equal(observedQuote(quote, { ...observed, balance: null }, preview), null);
 });
 
-test('uncaptured Flow account/quote inspection is read-only and explicitly unknown', async () => {
-  assert.deepEqual(await flowCommand({ op: 'inspectAccount', payload: { preview: { job: { jobId: 'never-execute' } } } }),
-    { ok: true, result: { account: null, quote: null } });
+test('Flow account/quote inspection is read-only and refuses a signed-out page', async () => {
+  const saved = globalThis.window;
+  globalThis.window = {};
+  try {
+    const result = await flowCommand({ op: 'inspectAccount', payload: { preview: { job: { jobId: 'never-execute' } } } });
+    assert.equal(result.ok, false);
+    assert.match(result.error, /Not signed in to Flow/);
+  } finally {
+    globalThis.window = saved;
+  }
 });

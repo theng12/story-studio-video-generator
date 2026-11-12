@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.6 — 2026-11-12
+
+- The read-only account and quote inspector now reads Flow's captured `nzlxg` credit RPC and binds an opaque page-provided identity, so Gateway claims have an observed account instead of none.
+- A clip length with no observed price gets no quote, and an unreadable balance stays unknown rather than becoming zero.
+
 ## 1.3.5 — 2026-11-11
 
 - Manager pauses and pacing stay saved after restart. Resume and close acknowledgements reflect the settings actually applied.

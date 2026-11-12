@@ -143,9 +143,11 @@ reservation/spending switches. New/missing dispatch control remains OFF. No app-
 account enablement or manager token operation is called by the extension.
 
 A configured profile ID is never transmitted as provider account identity. The
-read-only Flow account/quote inspector currently returns unknown because no exact
-provider identity/quote mapping has been captured; external telemetry therefore
-omits `account`. No account readiness, balance, reset, plan or buckets are invented.
+read-only Flow account/quote inspector reads the captured `nzlxg` credit RPC and
+binds an opaque page-provided identity, refreshed on every inspection and never
+cached past the account max age; it generates nothing. An unreadable balance is
+reported as unknown, never as zero, and a clip length with no observed price gets
+no quote.
 An observed stable opaque provider account, fresh matching state/revision and an
 exact observed provider quote are required before a new executable Gateway claim.
 `quoteRequired.job` is an UNCLAIMED preview with `executionAuthorized:false`, never

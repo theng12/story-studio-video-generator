@@ -209,3 +209,48 @@ test('refuses unverified aspect ratios instead of guessing', async (t) => {
   assert.match(result.error, /not verified/);
   assert.equal(mock.requests.length, 0);
 });
+
+const PREVIEW_HASH = 'a'.repeat(64);
+
+test('reads the captured nzlxg balance and quotes a priced preview', async (t) => {
+  const mock = install({ responses: { nzlxg: [23, 3, 8, 1, null, 23, [1794287978, 827444000]] } });
+  t.after(() => mock.restore());
+  const result = await flowCommand({
+    op: 'inspectAccount',
+    payload: { preview: { job: { jobId: 'job_1', durationSec: 4 }, executionAuthorized: false, payloadSha256: PREVIEW_HASH } },
+  });
+  assert.equal(result.ok, true, result.error);
+  assert.equal(mock.requests.length, 1);
+  assert.equal(mock.requests[0].rpcId, 'nzlxg');
+  assert.deepEqual(JSON.parse(mock.requests[0].freq[0][0][1]), []);
+  const { account, quote } = result.result;
+  assert.equal(account.provider, 'flow');
+  assert.equal(account.accountId, 'flow.sid');
+  assert.equal(account.readiness, 'ready');
+  assert.deepEqual([account.balance.value, account.balance.unit, account.balance.source], [23, 'credits', 'flow.nzlxg']);
+  assert.deepEqual([quote.value, quote.unit, quote.payloadSha256], [12, 'credits', PREVIEW_HASH]);
+});
+
+test('a preview with no observed price is quoted as nothing', async (t) => {
+  const mock = install({ responses: { nzlxg: [23, 3, 8, 1, null, 23, [1794287978, 827444000]] } });
+  t.after(() => mock.restore());
+  const result = await flowCommand({
+    op: 'inspectAccount',
+    payload: { preview: { job: { jobId: 'job_2', durationSec: 8 }, executionAuthorized: false, payloadSha256: PREVIEW_HASH } },
+  });
+  assert.equal(result.ok, true, result.error);
+  assert.equal(result.result.account.readiness, 'ready');
+  assert.equal(result.result.quote, null);
+});
+
+test('an unreadable balance stays unknown and never becomes zero', async (t) => {
+  const mock = install({ responses: {} });
+  t.after(() => mock.restore());
+  const result = await flowCommand({
+    op: 'inspectAccount',
+    payload: { preview: { job: { jobId: 'job_3', durationSec: 4 }, executionAuthorized: false, payloadSha256: PREVIEW_HASH } },
+  });
+  assert.equal(result.ok, true, result.error);
+  assert.deepEqual([result.result.account.readiness, result.result.account.balance], ['unknown', null]);
+  assert.equal(result.result.quote, null);
+});
