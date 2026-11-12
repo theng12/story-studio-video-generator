@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.10 — 2026-11-12
+
+- A 360p Gateway job is refused at claim until a 360p model key is captured. The 360p rate is known, but quoting it would name one price and submit the captured 720p key, which costs three times as much.
+
 ## 1.3.9 — 2026-11-12
 
 - The credit rate belongs to a model, not to video: only the two Omni Flash 1.2 keys are priced, at 3 credits per second at 720p and 1 per second at 360p for the 3–10 second options. Any other model gets no quote instead of borrowing Omni's rate.

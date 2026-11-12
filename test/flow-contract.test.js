@@ -252,9 +252,11 @@ test('the owner rate prices 360p at a credit a second and 720p at three', async 
     op: 'inspectAccount',
     payload: { preview: { job: { jobId: 'job_rate', modelKey, durationSec, resolution }, executionAuthorized: false, payloadSha256: PREVIEW_HASH } },
   })).result.quote;
-  assert.equal((await quoteFor(10, '360p')).value, 10);
   assert.equal((await quoteFor(10, '720p')).value, 30);
   assert.equal((await quoteFor(3, '720p')).value, 9);
+  // 360p has a known rate but no captured key, so it is refused rather than priced
+  // at one number and submitted at another.
+  assert.equal(await quoteFor(10, '360p'), null);
   // A resolution with no observed rate is unpriced, not free.
   assert.equal(await quoteFor(4, '480p'), null);
   assert.equal(await quoteFor(4, undefined), null);
