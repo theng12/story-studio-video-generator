@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.15 — 2026-11-12
+
+- A panel price is used only when the composer's model and ratio also match the job, read from the settings trigger and the selected ratio chip. A stale model or ratio falls back to the rate table, and to a refusal when the table cannot price the job either.
+
 ## 1.3.14 — 2026-11-12
 
 - The page price source is named `flow.panel.price` and the line is matched through wrapped whitespace and casing.

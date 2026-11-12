@@ -324,17 +324,35 @@ export async function flowCommand(command) {
     // What the page shows right now: the composer's own selection summary and the
     // panel's price line ("Generating will use 6 credits"). A visible summary is an
     // observation, not a backend binding — never turn a label into a provider key.
+    const CHIP_RATIO = { crop_16_9: '16:9', crop_9_16: '9:16', '16:9': '16:9', '9:16': '9:16' };
+    const label = (value) => String(value || '').toLowerCase().replace(/\s+/g, ' ').replace(/ - \d+ ?(s|seconds)\b.*$/, '').trim();
+    // A page price only speaks for this job when the composer is set to the same
+    // model, so a stale selection can never be quoted as if it were the job's.
+    const modelMatches = (pageModel, jobModel) => {
+      const page = label(pageModel);
+      const job = label(jobModel);
+      return Boolean(page) && Boolean(job) && (page === job || job.startsWith(`${page} `));
+    };
     const observeComposer = () => {
       const text = typeof document === 'undefined' ? '' : document.body?.innerText || '';
       const summaries = [...text.matchAll(/Video\s*·\s*(\d+p)\s*·\s*(\d+)s\s+[^\n]*\s*x(\d+)\b/g)];
       const summary = summaries.length === 1 ? summaries[0] : null;
       // The panel's own words, matched loosely for wrapped whitespace and casing.
       const price = text.match(/Generating\s+will\s+use\s+(\d+)\s+credits?/i);
+      // The selected model and ratio, read from the panel's own controls.
+      const trigger = typeof document === 'undefined' ? null : document.querySelector?.('button[aria-label="Settings trigger"]');
+      const model = String(trigger?.innerText || '').split('\n')[0];
+      const chips = typeof document === 'undefined' || !document.querySelectorAll ? []
+        : [...document.querySelectorAll('[aria-pressed="true"],[aria-selected="true"]')];
+      const chip = chips.map((node) => `${node?.innerText || ''} ${node?.getAttribute?.('aria-label') || ''}`).join('\n')
+        .match(/crop_16_9|crop_9_16|\b16:9\b|\b9:16\b/);
       return {
         selection: summary ? {
           resolution: summary[1], durationSec: Number(summary[2]), outputCount: Number(summary[3]),
         } : null,
         lineValue: price ? Number(price[1]) : null,
+        model,
+        ratio: chip ? CHIP_RATIO[chip[0]] || null : null,
       };
     };
 
@@ -429,9 +447,12 @@ export async function flowCommand(command) {
       // The page's own line prices whatever the composer is set to, so it only speaks
       // for this job when the composer matches it; otherwise the table answers. When
       // both answer and differ, the page wins and the difference is reported.
-      const { selection, lineValue } = observeComposer();
+      const { selection, lineValue, model, ratio } = observeComposer();
+      // All four must match before the page price is trusted: model, ratio,
+      // resolution and length, with a single output.
       const lineApplies = Number.isSafeInteger(lineValue) && selection &&
-        selection.durationSec === seconds && selection.resolution === job?.resolution && selection.outputCount === 1;
+        selection.durationSec === seconds && selection.resolution === job?.resolution && selection.outputCount === 1 &&
+        ratio === job?.aspectRatio && modelMatches(model, job?.modelLabel || job?.modelKey);
       const value = lineApplies ? lineValue : tableValue;
       const pricing = { source: lineApplies ? 'flow.panel.price' : 'flow.pricing.duration' };
       if (lineApplies && Number.isSafeInteger(tableValue) && tableValue !== lineValue) {
