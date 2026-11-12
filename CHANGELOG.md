@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.8 — 2026-11-12
+
+- Quotes now follow the owner's price rule instead of a fixed table: Omni Flash 1.2 costs 3 credits per second at 720p and 1 credit per second at 360p, for the 3–10 second options.
+- A duration outside 3–10 seconds, or a resolution with no observed rate, gets no quote rather than a guessed price.
+- Gateway jobs may carry a `resolution`; it is priced, and no captured Flow request field transmits it yet.
+
 ## 1.3.7 — 2026-11-12
 
 - Account readiness now follows the page: a signed-in worker with an unreadable balance is ready and reports its balance as unknown, not zero. Only a known zero balance is unready.

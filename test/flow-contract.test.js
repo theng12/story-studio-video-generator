@@ -217,7 +217,7 @@ test('reads the captured nzlxg balance and quotes a priced preview', async (t) =
   t.after(() => mock.restore());
   const result = await flowCommand({
     op: 'inspectAccount',
-    payload: { preview: { job: { jobId: 'job_1', durationSec: 4 }, executionAuthorized: false, payloadSha256: PREVIEW_HASH } },
+    payload: { preview: { job: { jobId: 'job_1', durationSec: 4, resolution: '720p' }, executionAuthorized: false, payloadSha256: PREVIEW_HASH } },
   });
   assert.equal(result.ok, true, result.error);
   assert.equal(mock.requests.length, 1);
@@ -231,15 +231,30 @@ test('reads the captured nzlxg balance and quotes a priced preview', async (t) =
   assert.deepEqual([quote.value, quote.unit, quote.payloadSha256], [12, 'credits', PREVIEW_HASH]);
 });
 
-test('an unobserved duration (5s) gets no quote, never a guessed or zero price', async (t) => {
+test('an unpriced duration (12s) gets no quote, never a guessed or zero price', async (t) => {
   const mock = install({ responses: { nzlxg: [23, 3, 8, 1, null, 23, [1794287978, 827444000]] } });
   t.after(() => mock.restore());
   const result = await flowCommand({
     op: 'inspectAccount',
-    payload: { preview: { job: { jobId: 'job_2', durationSec: 5 }, executionAuthorized: false, payloadSha256: PREVIEW_HASH } },
+    payload: { preview: { job: { jobId: 'job_2', durationSec: 12, resolution: '720p' }, executionAuthorized: false, payloadSha256: PREVIEW_HASH } },
   });
   assert.equal(result.ok, true, result.error);
   assert.equal(result.result.quote, null);
+});
+
+test('the owner rate prices 360p at a credit a second and 720p at three', async (t) => {
+  const mock = install({ responses: { nzlxg: [23, 3, 8, 1, null, 23, [1794287978, 827444000]] } });
+  t.after(() => mock.restore());
+  const quoteFor = async (durationSec, resolution) => (await flowCommand({
+    op: 'inspectAccount',
+    payload: { preview: { job: { jobId: 'job_rate', durationSec, resolution }, executionAuthorized: false, payloadSha256: PREVIEW_HASH } },
+  })).result.quote;
+  assert.equal((await quoteFor(10, '360p')).value, 10);
+  assert.equal((await quoteFor(10, '720p')).value, 30);
+  assert.equal((await quoteFor(3, '720p')).value, 9);
+  // A resolution with no observed rate is unpriced, not free.
+  assert.equal(await quoteFor(4, '480p'), null);
+  assert.equal(await quoteFor(4, undefined), null);
 });
 
 test('readiness follows the page for an unreadable, zero and positive balance', async (t) => {

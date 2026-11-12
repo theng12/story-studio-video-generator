@@ -3,7 +3,7 @@
 // touched; the queue processor only sees ordinary items with a gatewayJobId.
 
 export const GATEWAY_KINDS = Object.freeze(['video']);
-const JOB_FIELDS = new Set(['jobId', 'kind', 'prompt', 'videoMode', 'modelKey', 'modelLabel', 'durationSec', 'aspectRatio', 'referenceImages', 'flowProjectId']);
+const JOB_FIELDS = new Set(['jobId', 'kind', 'prompt', 'videoMode', 'modelKey', 'modelLabel', 'durationSec', 'resolution', 'aspectRatio', 'referenceImages', 'flowProjectId']);
 
 export function createGatewayWorkerId() {
   if (globalThis.crypto?.randomUUID) return `worker_${crypto.randomUUID()}`;
@@ -41,6 +41,8 @@ export function normalizeGatewayJob(job) {
     modelKey,
     modelLabel: String(job?.modelLabel || modelKey),
     durationSec: Math.max(0, Number(job?.durationSec) || 0),
+    // Priced, not yet transmitted: resolution has no captured Flow request field.
+    resolution: String(job?.resolution || ''),
     aspectRatio: '16:9',
     references,
     flowProjectId: String(job?.flowProjectId || '').trim(),
@@ -67,6 +69,7 @@ export function gatewayJobToItem(job, settings) {
     motionPrompt: normalized.prompt,
     imagePrompt: normalized.prompt,
     durationSec: normalized.durationSec,
+    resolution: normalized.resolution,
     unmappedFields: normalized.unmappedFields,
     projectId,
     videoModelKey: normalized.modelKey,

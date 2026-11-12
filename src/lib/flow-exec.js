@@ -362,9 +362,13 @@ export async function flowCommand(command) {
       if (!Number.isSafeInteger(value) || value < 0) throw new Error('Flow returned no credit balance.');
       return { value, unit: 'credits', source: 'flow.nzlxg', observedAt: new Date().toISOString() };
     };
-    // Observed live per clip: 4s text = 12, 3s image = 9. 6s/10s come from Flow's
-    // own UI at 720p. Any other length has no observed price, so it gets no quote.
-    const VIDEO_CREDIT_COST = Object.freeze({ 3: 9, 4: 12, 6: 18, 10: 30 });
+    // Owner's price rule, 2026-11-12: Omni Flash 1.2 costs 3 credits per second at
+    // 720p and 1 credit per second at 360p, for the 3–10s options only. Anything
+    // outside that has no price, so it gets no quote rather than a guess.
+    // shortcut: the captured model keys are 720p ones, so a 360p job is priced at
+    // the 360p rate but would still submit the 720p key until one is captured.
+    const VIDEO_CREDIT_RATE = Object.freeze({ '360p': 1, '720p': 3 });
+    const VIDEO_SECONDS = Object.freeze({ min: 3, max: 10 });
     // Opaque page-provided identity only — never a cookie, email, session id or
     // profile label. A session is not an account, so there is no fallback.
     const providerAccountId = () => {
@@ -395,7 +399,11 @@ export async function flowCommand(command) {
         balance, resetAt: null, plan: null, creditBuckets: null,
       };
       const preview = payload.preview;
-      const value = preview?.job ? VIDEO_CREDIT_COST[preview.job.durationSec] : undefined;
+      // A zero price is a real price, so test the number rather than truthiness.
+      const seconds = preview?.job?.durationSec;
+      const rate = VIDEO_CREDIT_RATE[preview?.job?.resolution];
+      const value = Number.isSafeInteger(rate) && Number.isSafeInteger(seconds) &&
+        seconds >= VIDEO_SECONDS.min && seconds <= VIDEO_SECONDS.max ? rate * seconds : undefined;
       const quote = balance && Number.isSafeInteger(value) && /^[0-9a-f]{64}$/.test(String(preview.payloadSha256 || ''))
         ? { provider: 'flow', accountId, payloadSha256: preview.payloadSha256, value, unit: 'credits',
             source: 'flow.pricing.duration', observedAt }
