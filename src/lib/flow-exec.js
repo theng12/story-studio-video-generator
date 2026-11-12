@@ -416,7 +416,15 @@ export async function flowCommand(command) {
         ? { provider: 'flow', accountId, payloadSha256: preview.payloadSha256, value, unit: 'credits',
             source: 'flow.pricing.duration', observedAt }
         : null;
-      return { account, quote };
+      // Name the half that is missing, so a refusal reads as a reason and not a stop.
+      const job = preview?.job;
+      const reason = quote || !job ? ''
+        : !VIDEO_CREDIT_RATE[job.modelKey] ? `no observed price for model ${job.modelKey || '(unnamed)'}`
+        : !VIDEO_KEY_RESOLUTIONS.includes(job.resolution) ? `the ${job.resolution || 'unspecified'} Flow key is not captured`
+        : !Number.isSafeInteger(seconds) || seconds < VIDEO_SECONDS.min || seconds > VIDEO_SECONDS.max
+          ? `${seconds}s is outside the observed ${VIDEO_SECONDS.min}–${VIDEO_SECONDS.max}s range`
+          : 'the credit balance is unreadable, so nothing can be quoted';
+      return { account, quote, reason };
     };
 
     // ponytail: the current app's create-project RPC has not been captured yet.

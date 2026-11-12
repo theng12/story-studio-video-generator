@@ -781,6 +781,24 @@ test('unclaimed preview without an exact quote never becomes queued or generated
   } finally { worker.restore(); }
 });
 
+test('a 360p job is refused at claim because its Flow key is not captured', async () => {
+  const replies = {};
+  const worker = await boot({ job: { ...JOB, resolution: '360p' }, flowReplies: replies, onFlow(op, _local, payload) {
+    if (op === 'inspectAccount' && payload.preview) {
+      replies.inspectAccount = { account: worker.account(), quote: null, reason: 'the 360p Flow key is not captured' };
+    }
+  } });
+  try {
+    await worker.send({ type: 'gatewayClaimNow' });
+    // Only the unclaimed preview went out; the quoted claim never did.
+    assert.equal(count(worker, '/claim'), 1);
+    assert.equal(worker.local.videoQueue?.length || 0, 0);
+    assert.equal(worker.local.gatewayUnsettledClaim, undefined);
+    assert.equal(generated(worker), 0);
+    assert.match(worker.local.lastVideoStatus.text, /the 360p Flow key is not captured/);
+  } finally { worker.restore(); }
+});
+
 test('quoted executable claim carries same-request observed account and applied revision', async () => {
   const worker = await boot();
   try {

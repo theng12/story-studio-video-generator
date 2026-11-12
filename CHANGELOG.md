@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.11 — 2026-11-12
+
+- A refused preview now says which part is missing — an unpriced model, an uncaptured resolution key, an out-of-range length, or an unreadable balance — instead of a generic message.
+
 ## 1.3.10 — 2026-11-12
 
 - A 360p Gateway job is refused at claim until a 360p model key is captured. The 360p rate is known, but quoting it would name one price and submit the captured 720p key, which costs three times as much.

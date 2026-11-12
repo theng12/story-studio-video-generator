@@ -584,7 +584,7 @@ async function gatewayTick() {
     const quote = observedQuote(quoted.quote, currentAccount, preview, maxAge);
     if (!quote || currentAccount.provider !== account.provider || currentAccount.accountId !== account.accountId ||
         currentAccount.connection !== 'connected' || currentAccount.signIn !== 'signed_in' || currentAccount.readiness !== 'ready') {
-      await writeStatus('No exact provider quote/account observation; preview was not executed.', 'info');
+      await writeStatus(`Preview not executed: ${quoted.reason || 'no exact provider quote or account observation'}.`, 'info');
       return null;
     }
     observation = await gatewayObservation(await gatewaySettings(), currentAccount);
