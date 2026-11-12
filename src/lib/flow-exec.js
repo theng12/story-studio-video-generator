@@ -370,6 +370,10 @@ export async function flowCommand(command) {
     const VIDEO_CREDIT_RATE = Object.freeze({
       'macaron_cookie_t2v_4s': { '360p': 1, '720p': 3 }, // Omni 1.2 Flash, text-to-video
       'macaron_cookie_r2v_3s': { '360p': 1, '720p': 3 }, // Omni 1.2 Flash, image-to-video
+      // Flow's own name for the same text model, read off a real YhhmEf submit in
+      // _orchestra/relay-lead/extensions-lead-20261112/evidence/flow-reads/video-request-body.txt
+      // (2026-11-12). Both namings must price, because a catalogue may carry either.
+      veo_3_1_t2v_lite: { '360p': 1, '720p': 3 },
     });
     // The 360p rate is known but no 360p model key has been captured, so quoting it
     // would name one price and submit a 720p request that costs another. Rate known,

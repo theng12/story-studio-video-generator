@@ -265,6 +265,8 @@ test('the owner rate prices 360p at a credit a second and 720p at three', async 
   // A resolution with no observed rate is unpriced, not free.
   assert.equal(await quoteFor(4, '480p'), null);
   assert.equal(await quoteFor(4, undefined), null);
+  // Flow's own name for the same text model prices identically to our catalogue key.
+  assert.equal((await quoteFor(4, '720p', 'veo_3_1_t2v_lite')).value, 12);
   // The rate belongs to the model: a model with no entry never borrows Omni's.
   assert.equal(await quoteFor(8, '720p', UNPRICED_MODEL), null);
   assert.equal(await quoteFor(4, '720p', 'unknown-model'), null);

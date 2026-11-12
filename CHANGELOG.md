@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.12 — 2026-11-12
+
+- Flow's own name for Omni Flash 1.2 text-to-video, `veo_3_1_t2v_lite`, is now priced alongside this extension's catalogue key at the same rates, so a Gateway job using either naming gets its quote instead of being refused for want of a price.
+
 ## 1.3.11 — 2026-11-12
 
 - A refused preview now says which part is missing — an unpriced model, an uncaptured resolution key, an out-of-range length, or an unreadable balance — instead of a generic message.
