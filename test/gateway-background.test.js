@@ -781,6 +781,24 @@ test('unclaimed preview without an exact quote never becomes queued or generated
   } finally { worker.restore(); }
 });
 
+test('a page price disagreeing with the rate table is reported and the page wins', async () => {
+  const replies = {};
+  const worker = await boot({ flowReplies: replies, onFlow(op, _local, payload) {
+    if (op === 'inspectAccount' && payload.preview) {
+      replies.inspectAccount = { account: worker.account(), pricing: { disagreement: { page: 6, table: 12 } }, quote: {
+        provider: 'flow', accountId: 'provider-observed-fixture', payloadSha256: payload.preview.payloadSha256,
+        value: 6, unit: 'credits', source: 'flow.panel.price', observedAt: new Date(Date.now()).toISOString() } };
+    }
+  } });
+  try {
+    await worker.send({ type: 'gatewayClaimNow' });
+    assert.match(worker.local.lastVideoStatus.text, /page quotes 6 credits where the rate table says 12/);
+    const quoted = worker.calls.filter(({ url }) => url.endsWith('/claim')).map(({ init }) => JSON.parse(init.body)).at(-1);
+    assert.equal(quoted.quote.value, 6);
+    await worker.settled();
+  } finally { worker.restore(); }
+});
+
 test('a 360p job is refused at claim because its Flow key is not captured', async () => {
   const replies = {};
   const worker = await boot({ job: { ...JOB, resolution: '360p' }, flowReplies: replies, onFlow(op, _local, payload) {

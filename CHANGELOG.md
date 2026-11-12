@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.14 — 2026-11-12
+
+- The page price source is named `flow.panel.price` and the line is matched through wrapped whitespace and casing.
+- A missing panel plus an unpriced job refuses the claim instead of quoting zero, and a page/table disagreement is covered by a background test that fails without it.
+
 ## 1.3.13 — 2026-11-12
 
 - The quote now comes from Flow's own "Generating will use N credits" line when the composer is set to the same model, ratio, resolution, length and single output as the job. The rate table answers only when that line is missing, and a disagreement between them is reported with the page's number used.

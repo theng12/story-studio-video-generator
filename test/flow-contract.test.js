@@ -312,7 +312,7 @@ test('the page price line is the quote, and a missing line falls back to the rat
   globalThis.document = { body: { innerText: 'Video · 720p · 4s · 1 clip x1\nGenerating will use 6 credits' } };
   const withLine = await flowCommand({ op: 'inspectAccount', payload: preview(4, '720p') });
   assert.equal(withLine.result.quote.value, 6);
-  assert.equal(withLine.result.quote.source, 'flow.page.pricing');
+  assert.equal(withLine.result.quote.source, 'flow.panel.price');
   assert.deepEqual(withLine.result.pricing.disagreement, { page: 6, table: 12 });
 
   // No panel open: the table answers rather than nothing.
@@ -325,4 +325,16 @@ test('the page price line is the quote, and a missing line falls back to the rat
   globalThis.document = { body: { innerText: 'Video · 360p · 10s · 1 clip x1\nGenerating will use 10 credits' } };
   const other = await flowCommand({ op: 'inspectAccount', payload: preview(4, '720p') });
   assert.equal(other.result.quote.value, 12);
+});
+
+test('a missing panel still refuses an unpriced job rather than quoting zero', async (t) => {
+  const mock = install({ responses: { nzlxg: [23, 3, 8, 1, null, 23, [1794287978, 827444000]] } });
+  const savedDocument = globalThis.document;
+  t.after(() => { globalThis.document = savedDocument; mock.restore(); });
+  globalThis.document = { body: { innerText: '' } };
+  const result = await flowCommand({ op: 'inspectAccount', payload: { preview: {
+    job: { jobId: 'job_nopanel', modelKey: UNPRICED_MODEL, durationSec: 8, resolution: '720p' },
+    executionAuthorized: false, payloadSha256: PREVIEW_HASH } } });
+  assert.equal(result.result.quote, null);
+  assert.match(result.result.reason, /no observed price for model/);
 });

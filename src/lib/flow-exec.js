@@ -328,7 +328,8 @@ export async function flowCommand(command) {
       const text = typeof document === 'undefined' ? '' : document.body?.innerText || '';
       const summaries = [...text.matchAll(/Video\s*·\s*(\d+p)\s*·\s*(\d+)s\s+[^\n]*\s*x(\d+)\b/g)];
       const summary = summaries.length === 1 ? summaries[0] : null;
-      const price = text.match(/Generating will use (\d+) credits?/);
+      // The panel's own words, matched loosely for wrapped whitespace and casing.
+      const price = text.match(/Generating\s+will\s+use\s+(\d+)\s+credits?/i);
       return {
         selection: summary ? {
           resolution: summary[1], durationSec: Number(summary[2]), outputCount: Number(summary[3]),
@@ -432,7 +433,7 @@ export async function flowCommand(command) {
       const lineApplies = Number.isSafeInteger(lineValue) && selection &&
         selection.durationSec === seconds && selection.resolution === job?.resolution && selection.outputCount === 1;
       const value = lineApplies ? lineValue : tableValue;
-      const pricing = { source: lineApplies ? 'flow.page.pricing' : 'flow.pricing.duration' };
+      const pricing = { source: lineApplies ? 'flow.panel.price' : 'flow.pricing.duration' };
       if (lineApplies && Number.isSafeInteger(tableValue) && tableValue !== lineValue) {
         pricing.disagreement = { page: lineValue, table: tableValue };
       }
