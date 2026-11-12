@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.13 — 2026-11-12
+
+- The quote now comes from Flow's own "Generating will use N credits" line when the composer is set to the same model, ratio, resolution, length and single output as the job. The rate table answers only when that line is missing, and a disagreement between them is reported with the page's number used.
+
 ## 1.3.12 — 2026-11-12
 
 - Flow's own name for Omni Flash 1.2 text-to-video, `veo_3_1_t2v_lite`, is now priced alongside this extension's catalogue key at the same rates, so a Gateway job using either naming gets its quote instead of being refused for want of a price.

@@ -321,6 +321,22 @@ export async function flowCommand(command) {
       return { url };
     };
 
+    // What the page shows right now: the composer's own selection summary and the
+    // panel's price line ("Generating will use 6 credits"). A visible summary is an
+    // observation, not a backend binding — never turn a label into a provider key.
+    const observeComposer = () => {
+      const text = typeof document === 'undefined' ? '' : document.body?.innerText || '';
+      const summaries = [...text.matchAll(/Video\s*·\s*(\d+p)\s*·\s*(\d+)s\s+[^\n]*\s*x(\d+)\b/g)];
+      const summary = summaries.length === 1 ? summaries[0] : null;
+      const price = text.match(/Generating will use (\d+) credits?/);
+      return {
+        selection: summary ? {
+          resolution: summary[1], durationSec: Number(summary[2]), outputCount: Number(summary[3]),
+        } : null,
+        lineValue: price ? Number(price[1]) : null,
+      };
+    };
+
     const listVideoModels = async () => {
       // The current app has no page-side model manifest. Return no entries so
       // the worker uses its tested catalog; still report sign-in and project.
@@ -331,15 +347,7 @@ export async function flowCommand(command) {
       } catch {
         // The panel needs a state result, not an exception, for signed-out tabs.
       }
-      // A visible workspace summary is an observation, not a backend binding.
-      // Never turn UI labels or slider positions into provider keys.
-      const text = typeof document === 'undefined' ? '' : document.body?.innerText || '';
-      const summaries = [...text.matchAll(/Video\s*·\s*(\d+p)\s*·\s*(\d+)s\s+[^\n]*\s*x(\d+)\b/g)];
-      const summary = summaries.length === 1 ? summaries[0] : null;
-      const observedSelection = summary ? {
-        resolution: summary[1], durationSec: Number(summary[2]), outputCount: Number(summary[3]),
-      } : null;
-      return { entries: [], signedIn, projectId: currentProjectId(), observedSelection };
+      return { entries: [], signedIn, projectId: currentProjectId(), observedSelection: observeComposer().selection };
     };
 
     const getContext = async () => {
@@ -410,25 +418,36 @@ export async function flowCommand(command) {
         balance, resetAt: null, plan: null, creditBuckets: null,
       };
       const preview = payload.preview;
+      const job = preview?.job;
       // A zero price is a real price, so test the number rather than truthiness.
-      const seconds = preview?.job?.durationSec;
-      const rate = VIDEO_CREDIT_RATE[preview?.job?.modelKey]?.[preview?.job?.resolution];
-      const value = Number.isSafeInteger(rate) && VIDEO_KEY_RESOLUTIONS.includes(preview?.job?.resolution) &&
+      const seconds = job?.durationSec;
+      const rate = VIDEO_CREDIT_RATE[job?.modelKey]?.[job?.resolution];
+      const tableValue = Number.isSafeInteger(rate) && VIDEO_KEY_RESOLUTIONS.includes(job?.resolution) &&
         Number.isSafeInteger(seconds) && seconds >= VIDEO_SECONDS.min && seconds <= VIDEO_SECONDS.max
         ? rate * seconds : undefined;
+      // The page's own line prices whatever the composer is set to, so it only speaks
+      // for this job when the composer matches it; otherwise the table answers. When
+      // both answer and differ, the page wins and the difference is reported.
+      const { selection, lineValue } = observeComposer();
+      const lineApplies = Number.isSafeInteger(lineValue) && selection &&
+        selection.durationSec === seconds && selection.resolution === job?.resolution && selection.outputCount === 1;
+      const value = lineApplies ? lineValue : tableValue;
+      const pricing = { source: lineApplies ? 'flow.page.pricing' : 'flow.pricing.duration' };
+      if (lineApplies && Number.isSafeInteger(tableValue) && tableValue !== lineValue) {
+        pricing.disagreement = { page: lineValue, table: tableValue };
+      }
       const quote = balance && Number.isSafeInteger(value) && /^[0-9a-f]{64}$/.test(String(preview.payloadSha256 || ''))
         ? { provider: 'flow', accountId, payloadSha256: preview.payloadSha256, value, unit: 'credits',
-            source: 'flow.pricing.duration', observedAt }
+            source: pricing.source, observedAt }
         : null;
       // Name the half that is missing, so a refusal reads as a reason and not a stop.
-      const job = preview?.job;
       const reason = quote || !job ? ''
         : !VIDEO_CREDIT_RATE[job.modelKey] ? `no observed price for model ${job.modelKey || '(unnamed)'}`
         : !VIDEO_KEY_RESOLUTIONS.includes(job.resolution) ? `the ${job.resolution || 'unspecified'} Flow key is not captured`
         : !Number.isSafeInteger(seconds) || seconds < VIDEO_SECONDS.min || seconds > VIDEO_SECONDS.max
           ? `${seconds}s is outside the observed ${VIDEO_SECONDS.min}–${VIDEO_SECONDS.max}s range`
           : 'the credit balance is unreadable, so nothing can be quoted';
-      return { account, quote, reason };
+      return { account, quote, reason, pricing };
     };
 
     // ponytail: the current app's create-project RPC has not been captured yet.

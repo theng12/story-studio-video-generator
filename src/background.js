@@ -587,6 +587,11 @@ async function gatewayTick() {
       await writeStatus(`Preview not executed: ${quoted.reason || 'no exact provider quote or account observation'}.`, 'info');
       return null;
     }
+    // The page's own price wins, but a disagreement with the rate table is reported
+    // rather than resolved silently.
+    if (quoted.pricing?.disagreement) {
+      await writeStatus(`Flow's page quotes ${quoted.pricing.disagreement.page} credits where the rate table says ${quoted.pricing.disagreement.table}; the page is used.`, 'info');
+    }
     observation = await gatewayObservation(await gatewaySettings(), currentAccount);
     if (await isPaused() || processing || await managerDispatchPaused(await getSettings()) ||
         await gatewayBinding(await gatewaySettings()) !== binding || !observation.telemetry.state.controlRevision ||
