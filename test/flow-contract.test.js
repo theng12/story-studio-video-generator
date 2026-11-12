@@ -211,13 +211,16 @@ test('refuses unverified aspect ratios instead of guessing', async (t) => {
 });
 
 const PREVIEW_HASH = 'a'.repeat(64);
+// The Omni Flash 1.2 text key, and a model the owner's rate does not cover.
+const OMNI_TEXT = FALLBACK_VIDEO_MODELS.find((model) => model.mode === 'text' && model.durationSec === 4).key;
+const UNPRICED_MODEL = FALLBACK_VIDEO_MODELS.find((model) => model.durationSec === 8).key;
 
 test('reads the captured nzlxg balance and quotes a priced preview', async (t) => {
   const mock = install({ responses: { nzlxg: [23, 3, 8, 1, null, 23, [1794287978, 827444000]] } });
   t.after(() => mock.restore());
   const result = await flowCommand({
     op: 'inspectAccount',
-    payload: { preview: { job: { jobId: 'job_1', durationSec: 4, resolution: '720p' }, executionAuthorized: false, payloadSha256: PREVIEW_HASH } },
+    payload: { preview: { job: { jobId: 'job_1', modelKey: OMNI_TEXT, durationSec: 4, resolution: '720p' }, executionAuthorized: false, payloadSha256: PREVIEW_HASH } },
   });
   assert.equal(result.ok, true, result.error);
   assert.equal(mock.requests.length, 1);
@@ -236,7 +239,7 @@ test('an unpriced duration (12s) gets no quote, never a guessed or zero price', 
   t.after(() => mock.restore());
   const result = await flowCommand({
     op: 'inspectAccount',
-    payload: { preview: { job: { jobId: 'job_2', durationSec: 12, resolution: '720p' }, executionAuthorized: false, payloadSha256: PREVIEW_HASH } },
+    payload: { preview: { job: { jobId: 'job_2', modelKey: OMNI_TEXT, durationSec: 12, resolution: '720p' }, executionAuthorized: false, payloadSha256: PREVIEW_HASH } },
   });
   assert.equal(result.ok, true, result.error);
   assert.equal(result.result.quote, null);
@@ -245,9 +248,9 @@ test('an unpriced duration (12s) gets no quote, never a guessed or zero price', 
 test('the owner rate prices 360p at a credit a second and 720p at three', async (t) => {
   const mock = install({ responses: { nzlxg: [23, 3, 8, 1, null, 23, [1794287978, 827444000]] } });
   t.after(() => mock.restore());
-  const quoteFor = async (durationSec, resolution) => (await flowCommand({
+  const quoteFor = async (durationSec, resolution, modelKey = OMNI_TEXT) => (await flowCommand({
     op: 'inspectAccount',
-    payload: { preview: { job: { jobId: 'job_rate', durationSec, resolution }, executionAuthorized: false, payloadSha256: PREVIEW_HASH } },
+    payload: { preview: { job: { jobId: 'job_rate', modelKey, durationSec, resolution }, executionAuthorized: false, payloadSha256: PREVIEW_HASH } },
   })).result.quote;
   assert.equal((await quoteFor(10, '360p')).value, 10);
   assert.equal((await quoteFor(10, '720p')).value, 30);
@@ -255,6 +258,9 @@ test('the owner rate prices 360p at a credit a second and 720p at three', async 
   // A resolution with no observed rate is unpriced, not free.
   assert.equal(await quoteFor(4, '480p'), null);
   assert.equal(await quoteFor(4, undefined), null);
+  // The rate belongs to the model: a model with no entry never borrows Omni's.
+  assert.equal(await quoteFor(8, '720p', UNPRICED_MODEL), null);
+  assert.equal(await quoteFor(4, '720p', 'unknown-model'), null);
 });
 
 test('readiness follows the page for an unreadable, zero and positive balance', async (t) => {

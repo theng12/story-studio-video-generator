@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.9 — 2026-11-12
+
+- The credit rate belongs to a model, not to video: only the two Omni Flash 1.2 keys are priced, at 3 credits per second at 720p and 1 per second at 360p for the 3–10 second options. Any other model gets no quote instead of borrowing Omni's rate.
+
 ## 1.3.8 — 2026-11-12
 
 - Quotes now follow the owner's price rule instead of a fixed table: Omni Flash 1.2 costs 3 credits per second at 720p and 1 credit per second at 360p, for the 3–10 second options.

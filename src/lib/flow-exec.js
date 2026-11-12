@@ -363,11 +363,16 @@ export async function flowCommand(command) {
       return { value, unit: 'credits', source: 'flow.nzlxg', observedAt: new Date().toISOString() };
     };
     // Owner's price rule, 2026-11-12: Omni Flash 1.2 costs 3 credits per second at
-    // 720p and 1 credit per second at 360p, for the 3–10s options only. Anything
-    // outside that has no price, so it gets no quote rather than a guess.
+    // 720p and 1 credit per second at 360p, for the 3–10s options only. The rate
+    // belongs to the model, not to video: another model costs differently, so one
+    // with no entry gets no quote rather than borrowing Omni's rate. A newer model
+    // is a new entry here, not a rewrite.
     // shortcut: the captured model keys are 720p ones, so a 360p job is priced at
     // the 360p rate but would still submit the 720p key until one is captured.
-    const VIDEO_CREDIT_RATE = Object.freeze({ '360p': 1, '720p': 3 });
+    const VIDEO_CREDIT_RATE = Object.freeze({
+      'macaron_cookie_t2v_4s': { '360p': 1, '720p': 3 }, // Omni 1.2 Flash, text-to-video
+      'macaron_cookie_r2v_3s': { '360p': 1, '720p': 3 }, // Omni 1.2 Flash, image-to-video
+    });
     const VIDEO_SECONDS = Object.freeze({ min: 3, max: 10 });
     // Opaque page-provided identity only — never a cookie, email, session id or
     // profile label. A session is not an account, so there is no fallback.
@@ -401,7 +406,7 @@ export async function flowCommand(command) {
       const preview = payload.preview;
       // A zero price is a real price, so test the number rather than truthiness.
       const seconds = preview?.job?.durationSec;
-      const rate = VIDEO_CREDIT_RATE[preview?.job?.resolution];
+      const rate = VIDEO_CREDIT_RATE[preview?.job?.modelKey]?.[preview?.job?.resolution];
       const value = Number.isSafeInteger(rate) && Number.isSafeInteger(seconds) &&
         seconds >= VIDEO_SECONDS.min && seconds <= VIDEO_SECONDS.max ? rate * seconds : undefined;
       const quote = balance && Number.isSafeInteger(value) && /^[0-9a-f]{64}$/.test(String(preview.payloadSha256 || ''))
