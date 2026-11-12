@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.16 — 2026-11-12
+
+- The selected ratio is read from the settings trigger's own line, which a real capture shows reads `Video · 720p · 8s` / `crop_16_9` / `x2`, instead of guessing at a pressed-chip attribute.
+- That capture also shows the video trigger carries no model name, so the selected model must come from a marked control in the open panel; without one the panel price is not used.
+
 ## 1.3.15 — 2026-11-12
 
 - A panel price is used only when the composer's model and ratio also match the job, read from the settings trigger and the selected ratio chip. A stale model or ratio falls back to the rate table, and to a refusal when the table cannot price the job either.

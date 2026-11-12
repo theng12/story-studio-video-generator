@@ -302,13 +302,15 @@ test('a signed-in page with no provider identity is refused, not guessed', async
 
 const OMNI_LABEL = FALLBACK_VIDEO_MODELS.find((model) => model.mode === 'text' && model.durationSec === 4).label;
 
-// A fake page: the composer summary, the panel price line, and the panel's own
-// selected model and ratio chip.
-function composerPage({ model = 'Omni 1.2 Flash', ratio = 'crop_16_9', summary = 'Video · 720p · 4s · 1 clip x1', line = 'Generating will use 6 credits' } = {}) {
+// A fake page shaped like the real one: the trigger reads "<summary>\n<ratio>\n<count>"
+// (evidence/flow-reads/video-capture-20261112.json, state.trigger), and the selected
+// model is marked in the open panel.
+function composerPage({ model = 'Omni 1.2 Flash', ratio = 'crop_16_9', video = 'Video · 720p · 4s', count = 'x1', line = 'Generating will use 6 credits' } = {}) {
+  const trigger = `${video}\n${ratio}\n${count}`;
   return {
-    body: { innerText: `${summary}\n${line}` },
-    querySelector: (selector) => selector === 'button[aria-label="Settings trigger"]' ? { innerText: model } : null,
-    querySelectorAll: (selector) => selector.includes('aria-pressed') ? [{ innerText: ratio, getAttribute: () => null }] : [],
+    body: { innerText: `${trigger}\n${line}` },
+    querySelector: (selector) => selector === 'button[aria-label="Settings trigger"]' ? { innerText: trigger } : null,
+    querySelectorAll: (selector) => selector.includes('aria-checked') ? [{ innerText: model, getAttribute: () => null }] : [],
   };
 }
 
@@ -334,7 +336,7 @@ test('the page price line is the quote only when the composer matches the job', 
   assert.equal(noLine.result.quote.source, 'flow.pricing.duration');
 
   // A line belonging to another resolution and length must not price this job.
-  globalThis.document = composerPage({ summary: 'Video · 360p · 10s · 1 clip x1', line: 'Generating will use 10 credits' });
+  globalThis.document = composerPage({ video: 'Video · 360p · 10s', line: 'Generating will use 10 credits' });
   assert.equal((await flowCommand({ op: 'inspectAccount', payload: preview(4, '720p') })).result.quote.value, 12);
 
   // A different model with matching resolution and length must not be trusted.

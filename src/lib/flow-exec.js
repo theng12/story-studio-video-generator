@@ -329,9 +329,11 @@ export async function flowCommand(command) {
     // A page price only speaks for this job when the composer is set to the same
     // model, so a stale selection can never be quoted as if it were the job's.
     const modelMatches = (pageModel, jobModel) => {
-      const page = label(pageModel);
       const job = label(jobModel);
-      return Boolean(page) && Boolean(job) && (page === job || job.startsWith(`${page} `));
+      return String(pageModel || '').split('\n').some((line) => {
+        const page = label(line);
+        return page && job && (page === job || job.startsWith(`${page} `));
+      });
     };
     const observeComposer = () => {
       const text = typeof document === 'undefined' ? '' : document.body?.innerText || '';
@@ -339,19 +341,21 @@ export async function flowCommand(command) {
       const summary = summaries.length === 1 ? summaries[0] : null;
       // The panel's own words, matched loosely for wrapped whitespace and casing.
       const price = text.match(/Generating\s+will\s+use\s+(\d+)\s+credits?/i);
-      // The selected model and ratio, read from the panel's own controls.
+      // The trigger reads "<summary>\n<ratio icon>\n<count>", so the selected ratio is
+      // its own line. The model is not on the trigger for video (it is for images), so
+      // it has to come from a marked control in the open panel.
       const trigger = typeof document === 'undefined' ? null : document.querySelector?.('button[aria-label="Settings trigger"]');
-      const model = String(trigger?.innerText || '').split('\n')[0];
+      const triggerText = String(trigger?.innerText || '');
       const chips = typeof document === 'undefined' || !document.querySelectorAll ? []
-        : [...document.querySelectorAll('[aria-pressed="true"],[aria-selected="true"]')];
-      const chip = chips.map((node) => `${node?.innerText || ''} ${node?.getAttribute?.('aria-label') || ''}`).join('\n')
-        .match(/crop_16_9|crop_9_16|\b16:9\b|\b9:16\b/);
+        : [...document.querySelectorAll('[aria-pressed="true"],[aria-selected="true"],[aria-checked="true"]')];
+      const chipText = chips.map((node) => `${node?.innerText || ''} ${node?.getAttribute?.('aria-label') || ''}`).join('\n');
+      const chip = (triggerText.match(/crop_16_9|crop_9_16/) || chipText.match(/crop_16_9|crop_9_16|\b16:9\b|\b9:16\b/));
       return {
         selection: summary ? {
           resolution: summary[1], durationSec: Number(summary[2]), outputCount: Number(summary[3]),
         } : null,
         lineValue: price ? Number(price[1]) : null,
-        model,
+        model: `${chipText}\n${triggerText}`,
         ratio: chip ? CHIP_RATIO[chip[0]] || null : null,
       };
     };
