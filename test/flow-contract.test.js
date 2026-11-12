@@ -243,7 +243,7 @@ test('a preview with no observed price is quoted as nothing', async (t) => {
   assert.equal(result.result.quote, null);
 });
 
-test('an unreadable balance stays unknown and never becomes zero', async (t) => {
+test('an unreadable balance stays claimable, unknown-priced and never zero', async (t) => {
   const mock = install({ responses: {} });
   t.after(() => mock.restore());
   const result = await flowCommand({
@@ -251,8 +251,19 @@ test('an unreadable balance stays unknown and never becomes zero', async (t) => 
     payload: { preview: { job: { jobId: 'job_3', durationSec: 4 }, executionAuthorized: false, payloadSha256: PREVIEW_HASH } },
   });
   assert.equal(result.ok, true, result.error);
-  assert.deepEqual([result.result.account.readiness, result.result.account.balance], ['unknown', null]);
+  assert.deepEqual([result.result.account.readiness, result.result.account.balance], ['ready', null]);
   assert.equal(result.result.quote, null);
+});
+
+test('a zero balance is reported as unready, not as unknown', async (t) => {
+  const mock = install({ responses: { nzlxg: [0, 3, 8, 1, null, 0, [1794287978, 827444000]] } });
+  t.after(() => mock.restore());
+  const result = await flowCommand({
+    op: 'inspectAccount',
+    payload: { preview: { job: { jobId: 'job_4', durationSec: 4 }, executionAuthorized: false, payloadSha256: PREVIEW_HASH } },
+  });
+  assert.equal(result.ok, true, result.error);
+  assert.deepEqual([result.result.account.readiness, result.result.account.balance.value], ['not_ready', 0]);
 });
 
 test('a signed-in page with no provider identity is refused, not guessed', async (t) => {

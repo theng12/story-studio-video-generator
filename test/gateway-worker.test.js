@@ -51,6 +51,7 @@ test('rejects malformed jobs before they reach the queue', () => {
   assert.throws(() => gatewayJobToItem({ ...JOB, flowProjectId: '' }, {}), /Flow project id/);
   assert.throws(() => normalizeGatewayJob({ ...JOB, videoMode: 'unknown' }), /source/);
   assert.throws(() => normalizeGatewayJob({ ...JOB, aspectRatio: 'square' }), /aspect/);
+  assert.throws(() => normalizeGatewayJob({ ...JOB, aspectRatio: '9:16' }), /aspect/);
   assert.throws(() => normalizeGatewayJob({ ...JOB, durationSec: null }), /duration/);
 });
 

@@ -20,7 +20,9 @@ export function normalizeGatewayJob(job) {
   const modelKey = String(job?.modelKey || '').trim();
   if (!modelKey) throw new Error('Gateway job has no model key.');
   if (!['text', 'image'].includes(job?.videoMode)) throw new Error('Gateway video source is not supported.');
-  if (!['16:9', '9:16'].includes(job?.aspectRatio)) throw new Error('Gateway video aspect ratio is not supported.');
+  // Only 16:9 has a captured Flow aspect value. Refuse 9:16 at claim rather than
+  // accept work this extension cannot submit without guessing a paid enum.
+  if (job?.aspectRatio !== '16:9') throw new Error('Gateway video aspect ratio is not supported — only 16:9 is captured for Flow.');
   if (!Number.isSafeInteger(job?.durationSec) || job.durationSec <= 0) throw new Error('Gateway video duration is unavailable.');
   const videoMode = job.videoMode;
   const references = (Array.isArray(job?.referenceImages) ? job.referenceImages : [])
@@ -39,7 +41,7 @@ export function normalizeGatewayJob(job) {
     modelKey,
     modelLabel: String(job?.modelLabel || modelKey),
     durationSec: Math.max(0, Number(job?.durationSec) || 0),
-    aspectRatio: job?.aspectRatio === '9:16' ? '9:16' : '16:9',
+    aspectRatio: '16:9',
     references,
     flowProjectId: String(job?.flowProjectId || '').trim(),
     // Future controls stay inert until their counterpart/request mapping exists.

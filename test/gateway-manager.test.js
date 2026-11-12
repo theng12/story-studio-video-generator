@@ -57,6 +57,9 @@ test('quote is exact-payload/same-account and never supplies an unknown balance'
   for (const patch of [{ accountId: 'other' }, { payloadSha256: 'c'.repeat(64) }, { unit: 'usd' }, { value: NaN },
     { observedAt: new Date(Date.now() - 100000).toISOString() }]) assert.equal(observedQuote({ ...quote, ...patch }, observed, preview), null);
   assert.equal(observedQuote(quote, { ...observed, balance: null }, preview), null);
+  // A stale balance cannot price a job even though the price itself is known.
+  const stale = { ...observed.balance, observedAt: new Date(Date.now() - 100000).toISOString() };
+  assert.equal(observedQuote(quote, { ...observed, balance: stale }, preview), null);
 });
 
 test('Flow account/quote inspection is read-only and refuses a signed-out page', async () => {

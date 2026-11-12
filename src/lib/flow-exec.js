@@ -389,7 +389,9 @@ export async function flowCommand(command) {
       const account = {
         schema: 1, provider: 'flow', accountId, source: 'extension.video', observedAt,
         connection: 'connected', signIn: 'signed_in',
-        readiness: !balance ? 'unknown' : balance.value > 0 ? 'ready' : 'not_ready',
+        // Readiness follows the page. An unreadable balance is unknown-priced, not
+        // unready; the quote gate on an observed price is what stops spending.
+        readiness: balance && balance.value === 0 ? 'not_ready' : 'ready',
         balance, resetAt: null, plan: null, creditBuckets: null,
       };
       const preview = payload.preview;

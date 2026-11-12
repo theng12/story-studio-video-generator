@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.7 — 2026-11-12
+
+- Account readiness now follows the page: a signed-in worker with an unreadable balance is ready and reports its balance as unknown, not zero. Only a known zero balance is unready.
+- A 9:16 Gateway job is refused at claim instead of being claimed and failing at submit; Flow's 9:16 value has not been observed.
+
 ## 1.3.6 — 2026-11-12
 
 - The read-only account and quote inspector now reads Flow's captured `nzlxg` credit RPC and binds an opaque page-provided identity, so Gateway claims have an observed account instead of none.
