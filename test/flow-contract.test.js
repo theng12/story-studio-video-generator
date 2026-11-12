@@ -265,8 +265,9 @@ test('the owner rate prices 360p at a credit a second and 720p at three', async 
   // A resolution with no observed rate is unpriced, not free.
   assert.equal(await quoteFor(4, '480p'), null);
   assert.equal(await quoteFor(4, undefined), null);
-  // Flow's own name for the same text model prices identically to our catalogue key.
-  assert.equal((await quoteFor(4, '720p', 'veo_3_1_t2v_lite')).value, 12);
+  // Veo 3.1 - Lite has no measured rate of its own: the panel quoted 10 credits for one
+  // 8s 720p clip, so Omni's 3/s must not be borrowed for it.
+  assert.equal(await quoteFor(8, '720p', 'veo_3_1_t2v_lite'), null);
   // The rate belongs to the model: a model with no entry never borrows Omni's.
   assert.equal(await quoteFor(8, '720p', UNPRICED_MODEL), null);
   assert.equal(await quoteFor(4, '720p', 'unknown-model'), null);
@@ -349,6 +350,10 @@ test('the page price line is the quote only when the composer matches the job', 
 
   // A different ratio must not be trusted either.
   globalThis.document = composerPage({ ratio: 'crop_9_16' });
+  assert.equal((await flowCommand({ op: 'inspectAccount', payload: preview(4, '720p') })).result.quote.value, 12);
+
+  // One video at a time: a panel price for x2 outputs is not this job's price.
+  globalThis.document = composerPage({ count: 'x2' });
   assert.equal((await flowCommand({ op: 'inspectAccount', payload: preview(4, '720p') })).result.quote.value, 12);
 });
 

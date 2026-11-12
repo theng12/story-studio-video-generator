@@ -403,16 +403,19 @@ export async function flowCommand(command) {
     const VIDEO_CREDIT_RATE = Object.freeze({
       'macaron_cookie_t2v_4s': { '360p': 1, '720p': 3 }, // Omni 1.2 Flash, text-to-video
       'macaron_cookie_r2v_3s': { '360p': 1, '720p': 3 }, // Omni 1.2 Flash, image-to-video
-      // Flow's own name for the same text model, read off a real YhhmEf submit in
-      // _orchestra/relay-lead/extensions-lead-20261112/evidence/flow-reads/video-request-body.txt
-      // (2026-11-12). Both namings must price, because a catalogue may carry either.
-      veo_3_1_t2v_lite: { '360p': 1, '720p': 3 },
+      // Veo 3.1 - Lite (Flow key veo_3_1_t2v_lite) is deliberately absent: the panel
+      // quoted 10 credits for one 8s 720p clip on 2026-11-12 (video-x1-20261112.json),
+      // not the 24 Omni's 3/s rate would give. Its own rate is unmeasured, so its price
+      // comes only from the panel line; without that line it has no quote.
     });
     // The 360p rate is known but no 360p model key has been captured, so quoting it
     // would name one price and submit a 720p request that costs another. Rate known,
     // key unobserved: no quote until that key exists.
     const VIDEO_KEY_RESOLUTIONS = Object.freeze(['720p']);
     const VIDEO_SECONDS = Object.freeze({ min: 3, max: 10 });
+    // Owner, 2026-11-12: one video at a time. x2/x3/x4 waste credits, so every job is a
+    // single output and a panel price for any other count never describes our work.
+    const VIDEO_OUTPUT_COUNT = 1;
     // Opaque page-provided identity only — never a cookie, email, session id or
     // profile label. A session is not an account, so there is no fallback.
     const providerAccountId = () => {
@@ -457,7 +460,8 @@ export async function flowCommand(command) {
       // All four must match before the page price is trusted: model, ratio,
       // resolution and length, with a single output.
       const lineApplies = Number.isSafeInteger(lineValue) && selection &&
-        selection.durationSec === seconds && selection.resolution === job?.resolution && selection.outputCount === 1 &&
+        selection.durationSec === seconds && selection.resolution === job?.resolution &&
+        selection.outputCount === VIDEO_OUTPUT_COUNT &&
         ratio === job?.aspectRatio && modelMatches(model, job?.modelLabel || job?.modelKey);
       const value = lineApplies ? lineValue : tableValue;
       const pricing = { source: lineApplies ? 'flow.panel.price' : 'flow.pricing.duration' };
