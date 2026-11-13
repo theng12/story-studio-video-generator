@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.3.28 — 2026-11-13
+- The side panel uses the same system as the image panel: 4/8/12/16 spacing, 32 px controls, 10 px radii, 11 px uppercase section titles, single-column full-width fields, and Queue video as the only primary action. Gateway keeps "Connected through Relay" under its own section title. Behaviour, ids and colours unchanged.
+
 ## 1.3.27 — 2026-11-13
 - Contrast and layering pass: stronger borders in light and dark, and every text, muted, accent, primary-button and status pair measures at least 5.1:1 in both themes.
 
