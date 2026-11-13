@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.3.24 — 2026-11-13
+- Gateway mode can reach the Gateway again: the loopback host permissions are restored, and a test fails if Gateway mode ships without them.
+
 ## 1.3.23 — 2026-11-13
 
 - Only Standalone (default) and Gateway Studio remain. The old Story Studio mode and its connection,
