@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Story Studio Video Generator",
-  "version": "1.3.25",
+  "version": "1.3.26",
   "description": "Generate videos from prompts with Google Flow, or run Gateway Studio jobs.",
   "permissions": [
     "alarms",

@@ -78,6 +78,32 @@ function isGatewayMode() {
 }
 
 let standalonePrompts = [];
+let gatewayRelay = { machineId: '', readiness: null };
+
+function renderGatewayRelayState() {
+  const el = $('gatewayRelayState');
+  if (!el) return;
+  const connected = !!(settings.gatewayUrl && gatewayToken && settings.gatewayWorkerId);
+  const relayOwned = !!gatewayRelay.machineId;
+  const blocked = connected && gatewayRelay.readiness && gatewayRelay.readiness.ready === false;
+  el.textContent = connected
+    ? blocked
+      ? `Connected through Relay · ${gatewayRelay.readiness.reason || 'Flow is not ready'}`
+      : relayOwned ? `Connected through Relay · ${gatewayRelay.machineId}` : 'Connected'
+    : (gatewayRelay.readiness && gatewayRelay.readiness.ready === false && gatewayRelay.readiness.reason) || 'Not connected';
+  el.className = connected && !blocked ? 'small ok' : 'muted small';
+  // Relay owns the connection in its browsers; the fields stay visible but read-only.
+  for (const id of ['gatewayUrl', 'gatewayToken']) {
+    const input = $(id);
+    if (input) input.readOnly = relayOwned;
+  }
+}
+
+async function loadGatewayRelayState() {
+  const stored = await chrome.storage.local.get(['gatewayRelayMachineId', 'gatewayReadiness']);
+  gatewayRelay = { machineId: stored.gatewayRelayMachineId || '', readiness: stored.gatewayReadiness || null };
+  renderGatewayRelayState();
+}
 
 function renderGatewaySettings() {
   if (!$('gatewayUrl')) return;
@@ -86,6 +112,7 @@ function renderGatewaySettings() {
   $('gatewayWorker').textContent = settings.gatewayWorkerId
     ? `Worker ${settings.gatewayWorkerId.slice(0, 22)}…`
     : 'Worker id assigned on first claim';
+  renderGatewayRelayState();
 }
 
 function renderWorkingMode() {
@@ -152,6 +179,7 @@ async function changeWorkingMode() {
   if (mode === 'gateway') {
     await saveGatewaySettings();
     await chrome.runtime.sendMessage({ type: 'gatewayModeChanged' });
+    await loadGatewayRelayState();
     renderWorkingMode();
     renderVideoMode();
     setStatus('Gateway Studio mode: the extension claims jobs from your gateway.', 'ok');
@@ -671,6 +699,7 @@ async function initWhatsNew() {
 }
 
 async function init() {
+  await loadGatewayRelayState();
   await initTheme();
   const manifest = chrome.runtime.getManifest();
   $('extensionVersion').textContent = `v${manifest.version}`;

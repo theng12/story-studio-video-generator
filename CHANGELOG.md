@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.3.26 — 2026-11-13
+- The Gateway pane says "Connected through Relay · <machine>" when Relay seeded this browser, marks the URL and token read-only while Relay owns them, and shows the shared readiness reason when Flow is not ready.
+
 ## 1.3.25 — 2026-11-13
 - The manifest carries a fixed key, so the extension id and its storage survive versioned folders.
 
