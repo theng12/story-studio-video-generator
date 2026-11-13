@@ -388,7 +388,8 @@ async function ensureFlowTab() {
 
 async function runFlow(tabId, op, payload = {}) {
   const tab = await chrome.tabs.get(tabId);
-  const { origin } = flowWorkspace(await getSettings());
+  const flowSettings = await getSettings();
+  const { origin } = flowWorkspace(flowSettings);
   if (!String(tab?.url || '').startsWith(`${origin}/`)) {
     throw new Error(`Refusing to run a Flow command outside ${origin}.`);
   }
@@ -396,7 +397,8 @@ async function runFlow(tabId, op, payload = {}) {
     target: { tabId },
     world: 'MAIN',
     func: flowCommand,
-    args: [{ op, payload }],
+    // The configured ids are only a fallback; the page resolves them from observed exchanges first.
+    args: [{ op, payload: { ...payload, rpcFallback: flowSettings.rpcIds } }],
   });
   if (!result?.ok) throw new Error(result?.error || `Flow ${op} failed.`);
   return result.result;
@@ -1106,3 +1108,21 @@ startupReady.then(() => {
   syncGatewayAlarm();
   processQueue();
 }).catch(() => writeStatus('Video recovery failed; retained work is held.', 'err'));
+
+// One account probe per worker start, delayed so it never races the first claim tick. A broken
+// account read is named here instead of being discovered at the first claim.
+async function accountProbeSelfCheck() {
+  try {
+    const settings = await getSettings();
+    if (settings.mode !== 'gateway' && settings.gatewayModeEnabled !== true) return;
+    const tabs = await chrome.tabs.query({ url: flowWorkspace(settings).match });
+    const tab = tabs.find((entry) => entry.status === 'complete');
+    if (!tab) return;
+    try {
+      await runFlow(tab.id, 'inspectAccount');
+    } catch (error) {
+      await writeStatus(`Account probe failed: ${String(error?.message || error)}. Claims retry after the next check; manual work still works.`, 'err');
+    }
+  } catch { /* best effort */ }
+}
+setTimeout(() => { accountProbeSelfCheck().catch(() => {}); }, 10000);

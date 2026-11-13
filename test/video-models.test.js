@@ -88,12 +88,14 @@ test('drops the retired pre-1.2 settings before defaults apply', () => {
   assert.deepEqual(upgradeStoredVideoSettings({ videoModel: 'veo-3.1-fast', theme: 'dark' }), { theme: 'dark' });
 });
 
-test('Flow helper speaks the captured batchexecute contract', async () => {
+test('Flow helper speaks the captured batchexecute contract without pinning ids', async () => {
   const source = await readFile(new URL('../src/lib/flow-exec.js', import.meta.url), 'utf8');
-  assert.match(source, /textToVideo:\s*'YhhmEf'/);
-  assert.match(source, /imageToVideo:\s*'MZZa6b'/);
-  assert.match(source, /checkVideo:\s*'jwpduf'/);
-  assert.match(source, /getMedia:\s*'as29s'/);
+  const config = await readFile(new URL('../src/lib/config.js', import.meta.url), 'utf8');
+  // Ids are discovered per page load; the captured ones are only the editable fallback data.
+  assert.doesNotMatch(source, /const RPC = \{/, 'the page command has no hard-coded RPC map');
+  assert.match(source, /requireRpc\('textToVideo'\)/);
+  assert.match(source, /requireRpc\('getMedia'\)/);
+  assert.match(config, /textToVideo: 'YhhmEf'/, 'the fallback ids live in configurable settings defaults');
   assert.match(source, /AiSandboxAngularFrontend\/data\/batchexecute/);
   assert.doesNotMatch(source, /labs\.google/);
   assert.doesNotMatch(source, /aisandbox-pa/);

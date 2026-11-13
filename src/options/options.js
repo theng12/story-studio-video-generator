@@ -19,6 +19,13 @@ const FIELDS = [
   'gatewayWorkerId',
 ];
 
+// Advanced fallback ids; discovery on the live page wins, these only fill a miss.
+const RPC_FIELDS = {
+  rpcIdGenerateImage: 'generateImage', rpcIdUploadImage: 'uploadImage',
+  rpcIdTextToVideo: 'textToVideo', rpcIdImageToVideo: 'imageToVideo',
+  rpcIdCheckVideo: 'checkVideo', rpcIdGetMedia: 'getMedia', rpcIdCredits: 'credits',
+};
+
 let autoSaveTimer = null;
 let savedTimer = null;
 
@@ -42,6 +49,12 @@ async function save() {
         return [field, element.type === 'checkbox' ? element.checked : element.value.trim()];
       })
     );
+    const rpcIds = { ...(await getSettings()).rpcIds };
+    for (const [id, name] of Object.entries(RPC_FIELDS)) {
+      const value = ($(id)?.value || '').trim();
+      if (value) rpcIds[name] = value;
+    }
+    patch.rpcIds = rpcIds;
     await Promise.all([
       saveSettings(patch),
       saveCredentials({
@@ -199,6 +212,9 @@ async function load() {
     const element = $(field);
     if (element.type === 'checkbox') element.checked = settings[field] === true;
     else element.value = settings[field] ?? DEFAULTS[field] ?? '';
+  }
+  for (const [id, name] of Object.entries(RPC_FIELDS)) {
+    if ($(id)) $(id).value = settings.rpcIds?.[name] || '';
   }
   $('studioUsername').value = credentials.username || '';
   $('studioPassword').value = credentials.password || '';

@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.22 — 2026-11-13
+
+- Flow RPC ids are no longer hard-coded in the shipped command: a MAIN-world recorder learns them from the live page's batchexecute exchanges, with the captured ids kept only as editable fallback values in Settings (Flow request ids, advanced).
+- An id that cannot be resolved is named with what was tried; the worker start probe reports "Account probe failed: …" and leaves manual work usable.
+- Tests simulate a changed id, discovery falling back, and both failing, without expecting any fixed id.
+
 ## 1.3.21 — 2026-11-13
 
 - A visibly signed-in Flow project whose account fields are missing claims with an unknown balance instead of refusing; the price quote still gates any spending.

@@ -14,14 +14,47 @@
 export async function flowCommand(command) {
   try {
     const SITEKEY = '6LdsFiUsAAAAAIjVDZcuLhaHiDn5nnHVXVRQGeMV';
-    const RPC = {
-      generateImage: 'ogiZ0b',
-      uploadImage: 'maseQ',
-      textToVideo: 'YhhmEf',
-      imageToVideo: 'MZZa6b',
-      checkVideo: 'jwpduf',
-      getMedia: 'as29s',
-      credits: 'nzlxg',
+    const payload = command?.payload || {};
+    // Flow's RPC ids are internals that move between builds. They are discovered per page load
+    // from exchanges the recorder observed, with settings.rpcIds as the configurable fallback;
+    // an id neither source answers is named with what was tried.
+    const RPC_NAMES = ['generateImage', 'uploadImage', 'textToVideo', 'imageToVideo', 'checkVideo', 'getMedia', 'credits'];
+    const classifyExchange = ({ rpcid, request = '', response = '' } = {}) => {
+      if (typeof rpcid !== 'string' || !rpcid) return null;
+      const req = String(request);
+      const res = String(response);
+      if (/flow-content\.google|googleusercontent/.test(res)) return 'generateImage';
+      if (/[A-Za-z0-9+/]{400,}={0,2}/.test(req)) return 'uploadImage';
+      if (!req.trim() || req.trim() === '[]') {
+        if (/^\s*\[/.test(res) || /"\d+"/.test(res)) return 'credits';
+      }
+      return null;
+    };
+    const resolveRpc = () => {
+      const fallback = payload.rpcFallback || {};
+      const observations = Array.isArray(window.__relayRpcLog) ? window.__relayRpcLog : [];
+      const discovered = {};
+      for (const row of observations) {
+        const name = classifyExchange(row);
+        if (name && !discovered[name]) discovered[name] = row.rpcid;
+      }
+      const ids = {};
+      const problems = [];
+      for (const name of RPC_NAMES) {
+        if (discovered[name]) ids[name] = discovered[name];
+        else if (typeof fallback[name] === 'string' && fallback[name]) ids[name] = fallback[name];
+        else problems.push(`${name}: no id was observed on the page and no fallback is configured`);
+      }
+      return { ids, problems };
+    };
+    const rpcResolution = resolveRpc();
+    const RPC = rpcResolution.ids;
+    const requireRpc = (name) => {
+      const id = RPC[name];
+      if (!id) {
+        throw new Error(`Flow RPC id "${name}" is unresolved: ${rpcResolution.problems.join('; ') || 'not observed and no fallback configured'}.`);
+      }
+      return id;
     };
     const IMAGE_MODELS = {
       'nano-banana-2': 'NARWHAL',
@@ -39,7 +72,6 @@ export async function flowCommand(command) {
     const VIDEO_STATUS_GENERATING = 2;
     const VIDEO_STATUS_DONE = 3;
     const EXACT_MODEL = /^[a-z0-9][a-z0-9_.-]{2,127}$/;
-    const payload = command?.payload || {};
 
     const uuid = () =>
       crypto.randomUUID
@@ -197,7 +229,7 @@ export async function flowCommand(command) {
           [upperUuid()],
         ];
         try {
-          result = await rpc(RPC.generateImage, request, projectId);
+          result = await rpc(requireRpc('generateImage'), request, projectId);
           break;
         } catch (error) {
           const detail = String(error?.message || error);
@@ -232,7 +264,7 @@ export async function flowCommand(command) {
       if (!projectId) throw new Error('No Flow project selected.');
       if (!payload.base64) throw new Error('uploadImage needs base64 image bytes.');
       const token = await mintToken('UPLOAD_IMAGE');
-      const result = await rpc(RPC.uploadImage, [
+      const result = await rpc(requireRpc('uploadImage'), [
         clientContext(projectId, token),
         String(payload.base64),
         payload.mime || 'image/png',
@@ -261,7 +293,7 @@ export async function flowCommand(command) {
       if (!Number.isSafeInteger(payload.durationSec) || payload.durationSec <= 0 ||
           !binding || binding.inventorySource !== 'live' || binding.modelKey !== modelKey || binding.mode !== mode ||
           binding.durationSec !== payload.durationSec ||
-          binding.rpcId !== (mode === 'text' ? RPC.textToVideo : RPC.imageToVideo)) {
+          binding.rpcId !== (mode === 'text' ? requireRpc('textToVideo') : requireRpc('imageToVideo'))) {
         throw new Error('Video model and duration have no matching captured request binding; nothing was submitted.');
       }
       const aspect = VIDEO_ASPECT[payload.aspectRatio || '16:9'];
@@ -277,7 +309,7 @@ export async function flowCommand(command) {
         ? [textInput(payload.prompt), modelKey, aspect, null, requestIds]
         : [textInput(payload.prompt), [[null, payload.mediaId]], modelKey, aspect, null, requestIds];
       const result = await rpc(
-        mode === 'text' ? RPC.textToVideo : RPC.imageToVideo,
+        mode === 'text' ? requireRpc('textToVideo') : requireRpc('imageToVideo'),
         [[request], context, [upperUuid(), 2]],
         projectId
       );
@@ -289,7 +321,7 @@ export async function flowCommand(command) {
     const checkVideo = async () => {
       if (!payload.mediaId) throw new Error('Video status check needs a media id.');
       const result = await rpc(
-        RPC.checkVideo,
+        requireRpc('checkVideo'),
         [null, null, [[payload.mediaId]]],
         projectIdFor(payload.projectId)
       );
@@ -313,7 +345,7 @@ export async function flowCommand(command) {
     };
     const getMedia = async () => {
       if (!payload.mediaId) throw new Error('Media lookup needs a media id.');
-      const result = await rpc(RPC.getMedia, [payload.mediaId], projectIdFor(payload.projectId));
+      const result = await rpc(requireRpc('getMedia'), [payload.mediaId], projectIdFor(payload.projectId));
       // The media object layout shifts between image and video; search for the
       // signed /video/ URL instead of trusting a fixed index.
       const url = findVideoUrl(result);
@@ -390,7 +422,7 @@ export async function flowCommand(command) {
     // [credits, 3, 8, 1, null, credits, [asOfSeconds, asOfNanos]]. Index 0 is the
     // balance; the trailing pair is a server snapshot time, not a reset date.
     const getCredits = async () => {
-      const result = await rpc(RPC.credits, [], currentProjectId());
+      const result = await rpc(requireRpc('credits'), [], currentProjectId());
       const value = result?.[0];
       if (!Number.isSafeInteger(value) || value < 0) throw new Error('Flow returned no credit balance.');
       return { value, unit: 'credits', source: 'flow.nzlxg', observedAt: new Date().toISOString() };

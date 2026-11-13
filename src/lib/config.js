@@ -5,9 +5,29 @@ const DEFAULT_VIDEO_MODEL = defaultVideoModel('image');
 // Flow lives at a fixed address now: a move is a code change, not a setting.
 export const FLOW_WORKSPACE_URL = 'https://flow.google.com';
 
+// Known-good Flow RPC ids: a fallback data value, editable in Settings, never a code constant.
+export const FLOW_RPC_DEFAULTS = {
+  generateImage: 'ogiZ0b',
+  uploadImage: 'maseQ',
+  textToVideo: 'YhhmEf',
+  imageToVideo: 'MZZa6b',
+  checkVideo: 'jwpduf',
+  getMedia: 'as29s',
+  credits: 'nzlxg',
+};
+function normalizeRpcIds(value) {
+  const next = { ...FLOW_RPC_DEFAULTS };
+  for (const name of Object.keys(FLOW_RPC_DEFAULTS)) {
+    const id = typeof value?.[name] === 'string' ? value[name].trim() : '';
+    if (id) next[name] = id.slice(0, 32);
+  }
+  return next;
+}
+
 export const DEFAULTS = {
   theme: 'system',
   mode: 'studio',
+  rpcIds: { ...FLOW_RPC_DEFAULTS },
   studioBaseUrl: 'http://localhost:8766',
   flowProjectId: '',
   flowProjectName: '',
@@ -86,6 +106,7 @@ function normalize(settings) {
   const duration = Number(settings.videoDurationSec);
   settings.videoDurationSec = Number.isSafeInteger(duration) && duration > 0 ? duration : null;
   return settings;
+  settings.rpcIds = normalizeRpcIds(settings.rpcIds);
 }
 
 export async function getSettings() {

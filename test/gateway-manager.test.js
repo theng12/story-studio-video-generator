@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { normalizeWorkerControl, observedAccount, observedQuote, workerObservation } from '../src/lib/gateway-manager.js';
 import { flowCommand } from '../src/lib/flow-exec.js';
+import { FLOW_RPC_DEFAULTS } from '../src/lib/config.js';
 
 const control = { revision: 'revision-1', dispatchEnabled: false, closeRequested: true, pacing: { minSeconds: 0, maxSeconds: 0 } };
 const account = () => ({ schema: 1, provider: 'flow', accountId: 'observed-opaque-1', source: 'flow.account',
@@ -66,7 +67,7 @@ test('Flow account/quote inspection is read-only and refuses a signed-out page',
   const saved = globalThis.window;
   globalThis.window = {};
   try {
-    const result = await flowCommand({ op: 'inspectAccount', payload: { preview: { job: { jobId: 'never-execute' } } } });
+    const result = await flowCommand({ op: 'inspectAccount', payload: { rpcFallback: FLOW_RPC_DEFAULTS,  preview: { job: { jobId: 'never-execute' } } } });
     assert.equal(result.ok, false);
     assert.match(result.error, /Not signed in to Flow/);
   } finally {

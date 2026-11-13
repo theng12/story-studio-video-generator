@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { flowCommand } from '../src/lib/flow-exec.js';
 import { FALLBACK_VIDEO_MODELS, snapshotVideoModel } from '../src/lib/video-models.js';
+import { FLOW_RPC_DEFAULTS } from '../src/lib/config.js';
 
 function selection(mode, durationSec) {
   const model = FALLBACK_VIDEO_MODELS.find((entry) => entry.mode === mode && entry.durationSec === durationSec);
@@ -75,7 +76,7 @@ test('text-to-video submits the captured YhhmEf shape', async (t) => {
   t.after(() => mock.restore());
   const result = await flowCommand({
     op: 'submitVideo',
-    payload: { projectId: PROJECT, mode: 'text', prompt: 'Slow push in.', ...selection('text', 4), aspectRatio: '16:9' },
+    payload: { rpcFallback: FLOW_RPC_DEFAULTS,  projectId: PROJECT, mode: 'text', prompt: 'Slow push in.', ...selection('text', 4), aspectRatio: '16:9' },
   });
   assert.equal(result.ok, true, result.error);
   assert.equal(result.result.mediaId, 'media-text');
@@ -100,7 +101,7 @@ test('image-to-video cites the start image and uses MZZa6b', async (t) => {
   t.after(() => mock.restore());
   const result = await flowCommand({
     op: 'submitVideo',
-    payload: { projectId: PROJECT, mode: 'image', prompt: 'Dolly in.', mediaId: 'start-image', ...selection('image', 3), aspectRatio: '16:9' },
+    payload: { rpcFallback: FLOW_RPC_DEFAULTS,  projectId: PROJECT, mode: 'image', prompt: 'Dolly in.', mediaId: 'start-image', ...selection('image', 3), aspectRatio: '16:9' },
   });
   assert.equal(result.ok, true, result.error);
   assert.equal(result.result.mediaId, 'media-image');
@@ -116,7 +117,7 @@ test('status polling reads the captured media status slot', async (t) => {
     responses: { jwpduf: [null, 38, [['media-1', PROJECT, 'op', null, null, [[1, 2], '', null, null, null, null, null, null, [3], 1]]]] },
   });
   t.after(() => mock.restore());
-  const result = await flowCommand({ op: 'checkVideo', payload: { projectId: PROJECT, mediaId: 'media-1' } });
+  const result = await flowCommand({ op: 'checkVideo', payload: { rpcFallback: FLOW_RPC_DEFAULTS,  projectId: PROJECT, mediaId: 'media-1' } });
   assert.equal(result.ok, true, result.error);
   assert.deepEqual(result.result, { status: 3, done: true, failed: false });
   const args = JSON.parse(mock.requests[0].freq[0][0][1]);
@@ -130,7 +131,7 @@ test('media lookup returns the signed /video/ URL from any nesting depth', async
     },
   });
   t.after(() => mock.restore());
-  const result = await flowCommand({ op: 'getMedia', payload: { projectId: PROJECT, mediaId: 'media-1' } });
+  const result = await flowCommand({ op: 'getMedia', payload: { rpcFallback: FLOW_RPC_DEFAULTS,  projectId: PROJECT, mediaId: 'media-1' } });
   assert.equal(result.ok, true, result.error);
   assert.equal(result.result.url, 'https://flow-content.google/video/media-1');
 });
@@ -144,7 +145,7 @@ test('image generation keeps the verified ogiZ0b shape and media id', async (t) 
   t.after(() => mock.restore());
   const result = await flowCommand({
     op: 'generateImage',
-    payload: { projectId: PROJECT, prompt: 'A lighthouse.', model: 'nano-banana-2', aspectRatio: '16:9' },
+    payload: { rpcFallback: FLOW_RPC_DEFAULTS,  projectId: PROJECT, prompt: 'A lighthouse.', model: 'nano-banana-2', aspectRatio: '16:9' },
   });
   assert.equal(result.ok, true, result.error);
   assert.equal(result.result.mediaId, 'img-media');
@@ -158,7 +159,7 @@ for (const [mode, durationSec] of [['text', 8], ['image', 10]]) {
     const mock = install({ responses: { [rpcId]: submitResponse('duration-media') } });
     t.after(() => mock.restore());
     const choice = selection(mode, durationSec);
-    const result = await flowCommand({ op: 'submitVideo', payload: {
+    const result = await flowCommand({ op: 'submitVideo', payload: { rpcFallback: FLOW_RPC_DEFAULTS, 
       projectId: PROJECT, mode, prompt: 'Duration fixture.', mediaId: 'start-image', ...choice, aspectRatio: '16:9',
     } });
     assert.equal(result.ok, true, result.error);
@@ -174,7 +175,7 @@ for (const patch of [{ durationSec: 6 }, { modelBinding: undefined }, { modelBin
     t.after(() => mock.restore());
     let tokens = 0;
     window.grecaptcha.enterprise.execute = async () => { tokens++; return 'unused'; };
-    const result = await flowCommand({ op: 'submitVideo', payload: {
+    const result = await flowCommand({ op: 'submitVideo', payload: { rpcFallback: FLOW_RPC_DEFAULTS, 
       projectId: PROJECT, mode: 'text', prompt: 'Never submitted.', ...selection('text', 4), ...patch,
     } });
     assert.equal(result.ok, false);
@@ -203,7 +204,7 @@ test('refuses unverified aspect ratios instead of guessing', async (t) => {
   t.after(() => mock.restore());
   const result = await flowCommand({
     op: 'submitVideo',
-    payload: { projectId: PROJECT, mode: 'text', prompt: 'x', ...selection('text', 4), aspectRatio: '9:16' },
+    payload: { rpcFallback: FLOW_RPC_DEFAULTS,  projectId: PROJECT, mode: 'text', prompt: 'x', ...selection('text', 4), aspectRatio: '9:16' },
   });
   assert.equal(result.ok, false);
   assert.match(result.error, /not verified/);
@@ -220,7 +221,7 @@ test('reads the captured nzlxg balance and quotes a priced preview', async (t) =
   t.after(() => mock.restore());
   const result = await flowCommand({
     op: 'inspectAccount',
-    payload: { preview: { job: { jobId: 'job_1', modelKey: OMNI_TEXT, durationSec: 4, resolution: '720p' }, executionAuthorized: false, payloadSha256: PREVIEW_HASH } },
+    payload: { rpcFallback: FLOW_RPC_DEFAULTS,  preview: { job: { jobId: 'job_1', modelKey: OMNI_TEXT, durationSec: 4, resolution: '720p' }, executionAuthorized: false, payloadSha256: PREVIEW_HASH } },
   });
   assert.equal(result.ok, true, result.error);
   assert.equal(mock.requests.length, 1);
@@ -239,7 +240,7 @@ test('an unpriced duration (12s) gets no quote, never a guessed or zero price', 
   t.after(() => mock.restore());
   const result = await flowCommand({
     op: 'inspectAccount',
-    payload: { preview: { job: { jobId: 'job_2', modelKey: OMNI_TEXT, durationSec: 12, resolution: '720p' }, executionAuthorized: false, payloadSha256: PREVIEW_HASH } },
+    payload: { rpcFallback: FLOW_RPC_DEFAULTS,  preview: { job: { jobId: 'job_2', modelKey: OMNI_TEXT, durationSec: 12, resolution: '720p' }, executionAuthorized: false, payloadSha256: PREVIEW_HASH } },
   });
   assert.equal(result.ok, true, result.error);
   assert.equal(result.result.quote, null);
@@ -250,7 +251,7 @@ test('the owner rate prices 360p at a credit a second and 720p at three', async 
   t.after(() => mock.restore());
   const quoteFor = async (durationSec, resolution, modelKey = OMNI_TEXT) => (await flowCommand({
     op: 'inspectAccount',
-    payload: { preview: { job: { jobId: 'job_rate', modelKey, durationSec, resolution }, executionAuthorized: false, payloadSha256: PREVIEW_HASH } },
+    payload: { rpcFallback: FLOW_RPC_DEFAULTS,  preview: { job: { jobId: 'job_rate', modelKey, durationSec, resolution }, executionAuthorized: false, payloadSha256: PREVIEW_HASH } },
   })).result.quote;
   assert.equal((await quoteFor(10, '720p')).value, 30);
   assert.equal((await quoteFor(3, '720p')).value, 9);
@@ -259,7 +260,7 @@ test('the owner rate prices 360p at a credit a second and 720p at three', async 
   assert.equal(await quoteFor(10, '360p'), null);
   const refused = await flowCommand({
     op: 'inspectAccount',
-    payload: { preview: { job: { jobId: 'job_360', modelKey: OMNI_TEXT, durationSec: 10, resolution: '360p' }, executionAuthorized: false, payloadSha256: PREVIEW_HASH } },
+    payload: { rpcFallback: FLOW_RPC_DEFAULTS,  preview: { job: { jobId: 'job_360', modelKey: OMNI_TEXT, durationSec: 10, resolution: '360p' }, executionAuthorized: false, payloadSha256: PREVIEW_HASH } },
   });
   assert.equal(refused.result.reason, 'the 360p Flow key is not captured');
   // A resolution with no observed rate is unpriced, not free.
@@ -284,7 +285,7 @@ test('readiness follows the page for an unreadable, zero and positive balance', 
     t.after(() => mock.restore());
     const result = await flowCommand({
       op: 'inspectAccount',
-      payload: { preview: { job: { jobId: 'job_r', durationSec: 4 }, executionAuthorized: false, payloadSha256: PREVIEW_HASH } },
+      payload: { rpcFallback: FLOW_RPC_DEFAULTS,  preview: { job: { jobId: 'job_r', durationSec: 4 }, executionAuthorized: false, payloadSha256: PREVIEW_HASH } },
     });
     assert.equal(result.ok, true, `${item.label}: ${result.error}`);
     assert.equal(result.result.account.readiness, item.readiness, item.label);
@@ -296,7 +297,7 @@ test('a signed-in page with no provider identity is refused, not guessed', async
   const saved = globalThis.window;
   globalThis.window = { WIZ_global_data: { SNlM0e: 'at-token', FdrFJe: 'sid', cfb2h: 'bl' } };
   t.after(() => { globalThis.window = saved; });
-  const result = await flowCommand({ op: 'inspectAccount', payload: {} });
+  const result = await flowCommand({ op: 'inspectAccount', payload: { rpcFallback: FLOW_RPC_DEFAULTS, } });
   assert.equal(result.ok, false);
   assert.match(result.error, /no stable account identity/i);
 });
@@ -323,7 +324,7 @@ test('the page price line is the quote only when the composer matches the job', 
   const mock = install({ responses: { nzlxg: [23, 3, 8, 1, null, 23, [1794287978, 827444000]] } });
   const savedDocument = globalThis.document;
   t.after(() => { globalThis.document = savedDocument; mock.restore(); });
-  const preview = (durationSec, resolution) => ({ preview: {
+  const preview = (durationSec, resolution) => ({ rpcFallback: FLOW_RPC_DEFAULTS, preview: {
     job: { jobId: 'job_page', modelKey: OMNI_TEXT, modelLabel: OMNI_LABEL, durationSec, resolution, aspectRatio: '16:9' },
     executionAuthorized: false, payloadSha256: PREVIEW_HASH } });
 
@@ -362,7 +363,7 @@ test('a missing panel still refuses an unpriced job rather than quoting zero', a
   const savedDocument = globalThis.document;
   t.after(() => { globalThis.document = savedDocument; mock.restore(); });
   globalThis.document = { body: { innerText: '' } };
-  const result = await flowCommand({ op: 'inspectAccount', payload: { preview: {
+  const result = await flowCommand({ op: 'inspectAccount', payload: { rpcFallback: FLOW_RPC_DEFAULTS,  preview: {
     job: { jobId: 'job_nopanel', modelKey: UNPRICED_MODEL, durationSec: 8, resolution: '720p' },
     executionAuthorized: false, payloadSha256: PREVIEW_HASH } } });
   assert.equal(result.result.quote, null);

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Story Studio Video Generator",
-  "version": "1.3.21",
+  "version": "1.3.22",
   "description": "Create and organize video assets for Story Studio projects.",
   "permissions": [
     "alarms",
@@ -43,5 +43,17 @@
     "32": "src/icons/icon32.png",
     "48": "src/icons/icon48.png",
     "128": "src/icons/icon128.png"
-  }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://flow.google.com/*"
+      ],
+      "js": [
+        "src/flow-recorder.js"
+      ],
+      "world": "MAIN",
+      "run_at": "document_start"
+    }
+  ]
 }
