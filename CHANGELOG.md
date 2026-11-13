@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.3.27 — 2026-11-13
+- Contrast and layering pass: stronger borders in light and dark, and every text, muted, accent, primary-button and status pair measures at least 5.1:1 in both themes.
+
 ## 1.3.26 — 2026-11-13
 - The Gateway pane says "Connected through Relay · <machine>" when Relay seeded this browser, marks the URL and token read-only while Relay owns them, and shows the shared readiness reason when Flow is not ready.
 
