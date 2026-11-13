@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.3.25 — 2026-11-13
+- The manifest carries a fixed key, so the extension id and its storage survive versioned folders.
+
 ## 1.3.24 — 2026-11-13
 - Gateway mode can reach the Gateway again: the loopback host permissions are restored, and a test fails if Gateway mode ships without them.
 

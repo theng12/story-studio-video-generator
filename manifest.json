@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Story Studio Video Generator",
-  "version": "1.3.24",
+  "version": "1.3.25",
   "description": "Generate videos from prompts with Google Flow, or run Gateway Studio jobs.",
   "permissions": [
     "alarms",
@@ -52,5 +52,6 @@
       "world": "MAIN",
       "run_at": "document_start"
     }
-  ]
+  ],
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAr/UIJ4LI3jzepM8el1EThJDQEl1CCSmfVSPoQwPmgVXSskHBMYHM09xHhfnyE0ZwmfuIxldlC4RCyh0RrBn1T7Xsy3xpOLxuwFp6wLPB334hqY1huzPys70V6rqzC9RI6u9Szdo0hWeidEj+WCDPiZZ62meJZ/E488vlPrvjzDmUcLCpzSuVIDf29T2XuTPMkdwETupHpVLVuQq4p9XA4ytt+lz20QNkwhOWQqkN0cRT20CclsDx9wI17F22cwoA9rGWkxY+93KQ/wSJRO3pX+0D8NBsrgkoQzOt2hG0wq443DJ4t3FhZJEVIGiVOP3q4jM+q5sjbnCHvwZXF5SmawIDAQAB"
 }

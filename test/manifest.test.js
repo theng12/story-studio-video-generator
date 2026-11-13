@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
@@ -15,4 +16,14 @@ test('Gateway mode is unusable without the loopback host permissions', () => {
   for (const host of ['http://127.0.0.1/*', 'http://localhost/*', 'http://[::1]/*']) {
     assert.ok(manifest.host_permissions.includes(host), `${host} is declared`);
   }
+});
+
+test('a fixed key keeps the extension id stable across versioned folders', () => {
+  // Without a key Chrome derives a new id from the folder path every release, so a seeded
+  // extension id and its storage are orphaned. This pins the id.
+  assert.ok(manifest.key, 'the manifest carries a fixed key');
+  const der = Buffer.from(manifest.key, 'base64');
+  const hex = createHash('sha256').update(der).digest('hex').slice(0, 32);
+  const id = [...hex].map((digit) => String.fromCharCode(97 + parseInt(digit, 16))).join('');
+  assert.equal(id, 'jjmjhbmfklljgcfggmgmbodbhlfbmfof');
 });
