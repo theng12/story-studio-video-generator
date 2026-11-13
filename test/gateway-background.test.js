@@ -36,13 +36,13 @@ async function waitFor(predicate) {
   for (let n = 0; n < 400; n++) { if (predicate()) return; await pause(5); }
   throw new Error('Video background fixture timed out.');
 }
-async function boot({ local = {}, sync, rows = new Map(), mode = 'gateway', job = JOB, answers = [{ ok: true }], health = {}, failAnswer = { ok: true }, onClaim, onFlow, onTelemetry, claimReply, lostClaim = false, noTabs = false, storySave, assetReply, onTabs, flowReplies = {} } = {}) {
+async function boot({ local = {}, sync, rows = new Map(), mode = 'gateway', job = JOB, answers = [{ ok: true }], health = {}, failAnswer = { ok: true }, onClaim, onFlow, onTelemetry, claimReply, lostClaim = false, noTabs = false, assetReply, onTabs, flowReplies = {} } = {}) {
   sync ||= { videoSettings: { mode, gatewayUrl: 'http://127.0.0.1:49873', gatewayWorkerId: '', flowProjectId: PROJECT, humanDelayMinSec: 0, humanDelayMaxSec: 0 } };
   const configuredToken = local.gatewayWorkerToken ?? 'fixture-token';
   // Isolate startup recovery from the explicit manager tick each test requests.
   local.gatewayWorkerToken = '';
   const desiredMode = sync.videoSettings.mode;
-  sync.videoSettings.mode = 'studio';
+  sync.videoSettings.mode = 'standalone';
   const prior = Object.fromEntries(['chrome', 'fetch', 'indexedDB'].map((key) => [key, globalThis[key]]));
   const calls = [], provider = [], downloads = [], alarms = [], scheduled = [];
   const control = Object.hasOwn(health, 'control') ? health.control : { revision: 'fixture-control', dispatchEnabled: true, closeRequested: false,
@@ -79,11 +79,7 @@ async function boot({ local = {}, sync, rows = new Map(), mode = 'gateway', job 
   globalThis.fetch = async (url, init = {}) => {
     const call = { url: String(url), init }; calls.push(call);
     if (url === 'https://flow-content.google/video/fixture') return assetReply || new Response(VIDEO, { headers: { 'Content-Type': 'video/mp4' } });
-    if (String(url).startsWith('http://localhost:8766/api/')) {
-      assert.equal(mode, 'studio', 'Gateway/Standalone must not use Story credentials.');
-      await storySave?.(call);
-      return Response.json({ saved_as: 'fixture.mp4' });
-    }
+    assert.ok(!String(url).startsWith('http://localhost:8766'), 'Removed Story Studio transport must never be called.');
     assert.equal(new URL(url).origin, 'http://127.0.0.1:49873', 'No real network is permitted.');
     if (url.endsWith('/health')) return Response.json({ ok: true, workerId: 'fixture-worker', kind: 'video', maxResultBytes: 1024, leaseSeconds: 90, accountMaxAgeSeconds: 90, control, ...health });
     if (url.endsWith('/telemetry')) { await onTelemetry?.(local, sync); return Response.json({ ok: true, receivedAt: Date.now() / 1000, control }); }
@@ -187,7 +183,7 @@ test('serial claims adopt authenticated worker id and busy queue admits one job'
 });
 
 test('mode change during preflight refuses the claim', async () => {
-  const worker = await boot({ onTabs(sync) { sync.videoSettings.mode = 'studio'; } });
+  const worker = await boot({ onTabs(sync) { sync.videoSettings.mode = 'standalone'; } });
   try {
     await worker.send({ type: 'gatewayClaimNow' }); assert.equal(count(worker, '/claim'), 0);
     assert.equal(worker.local.gatewayUnsettledClaim, undefined); assert.equal(worker.provider.length, 0);
@@ -372,41 +368,22 @@ for (const durationSec of [4, 8]) {
   });
 }
 
-test('Story explicit clip length is bound separately from scene timeline length', async () => {
-  const model = FALLBACK_VIDEO_MODELS.find((entry) => entry.mode === 'text' && entry.durationSec === 4);
-  const worker = await boot({ mode: 'studio' });
+test('standalone historical fallback cannot authorize new image or video work', async () => {
+  const model = FALLBACK_VIDEO_MODELS.find((entry) => entry.mode === 'image');
+  const row = { id: 'historical', status: 'pending', phase: 'queued', videoMode: 'image',
+    videoModelKey: model.key, videoModelLabel: model.label, durationSec: model.durationSec,
+    videoSource: 'generate', projectId: PROJECT, motionPrompt: 'Never submit historical transport.' };
+  const worker = await boot({ mode: 'standalone', local: { videoQueue: [row] },
+    flowReplies: { listVideoModels: { entries: [], signedIn: true, projectId: PROJECT } },
+  });
   try {
-    const result = await worker.send({ type: 'enqueueScenes', payload: {
-      slug: 'fixture', episodeCode: 'E01', projectId: PROJECT, videoMode: 'text', videoModelKey: model.key,
-      durationSec: 4, scenes: [{ id: 'scene-1', motionPrompt: 'Slow push.', durationSec: 12 }],
-    } });
-    assert.equal(result.ok, true, result.error);
-    await waitFor(() => queueItem(worker)?.status === 'done'); await worker.settled();
-    assert.equal(queueItem(worker).durationSec, 4);
-    assert.equal(queueItem(worker).sceneDurationSec, 12);
-    assert.equal(worker.provider.find(({ op }) => op === 'submitVideo').payload.durationSec, 4);
-    assert.equal(count(worker, '/upload-clip/scene-1'), 1);
+    await waitFor(() => queueItem(worker)?.status === 'failed'); await worker.settled();
+    assert.match(queueItem(worker).error, /current model and duration request mapping is unverified/);
+    assert.equal(queueItem(worker).durationSec, model.durationSec);
+    assert.equal(queueItem(worker).videoModelKey, model.key);
+    assert.equal(worker.provider.filter(({ op }) => ['submitVideo', 'generateImage', 'uploadImage'].includes(op)).length, 0);
   } finally { worker.restore(); }
 });
-
-for (const mode of ['studio', 'standalone']) {
-  test(`${mode} historical fallback cannot authorize new image or video work`, async () => {
-    const model = FALLBACK_VIDEO_MODELS.find((entry) => entry.mode === 'image');
-    const row = { id: 'historical', status: 'pending', phase: 'queued', videoMode: 'image',
-      videoModelKey: model.key, videoModelLabel: model.label, durationSec: model.durationSec,
-      videoSource: 'generate', projectId: PROJECT, motionPrompt: 'Never submit historical transport.' };
-    const worker = await boot({ mode, local: { videoQueue: [row] },
-      flowReplies: { listVideoModels: { entries: [], signedIn: true, projectId: PROJECT } },
-    });
-    try {
-      await waitFor(() => queueItem(worker)?.status === 'failed'); await worker.settled();
-      assert.match(queueItem(worker).error, /current model and duration request mapping is unverified/);
-      assert.equal(queueItem(worker).durationSec, model.durationSec);
-      assert.equal(queueItem(worker).videoModelKey, model.key);
-      assert.equal(worker.provider.filter(({ op }) => ['submitVideo', 'generateImage', 'uploadImage'].includes(op)).length, 0);
-    } finally { worker.restore(); }
-  });
-}
 
 test('unknown Gateway controls are retained and refuse provider work without a default substitution', async () => {
   const worker = await boot({ job: { ...JOB, futureControl: { value: 'unmapped' }, sceneDurationSec: 12 } });
@@ -459,20 +436,16 @@ test('queue restart retains duration and binding and refuses a changed request m
   } finally { worker.restore(); }
 });
 
-for (const mode of ['studio', 'standalone']) {
-  test(`${mode} still polls known video and saves exact bytes without Gateway requests`, async () => {
-    const item = { id: 'local-video', status: 'pending', phase: 'polling', videoMediaId: 'known-video', projectId: PROJECT, videoMode: 'text', sceneId: 'scene-1', slug: 'fixture', episodeCode: 'E01', label: 'Fixture video', target: mode === 'standalone' ? 'download' : undefined, downloadPath: 'StoryStudioVideos/Standalone/fixture.mp4' };
-    const worker = await boot({ mode, local: { videoQueue: [item] }, storySave(call) { assert.deepEqual(Buffer.from(call.init.body), VIDEO); } });
-    try {
-      await waitFor(() => queueItem(worker)?.status === 'done'); await worker.settled();
-      assert.equal(count(worker, '/claim'), 0); assert.equal(generated(worker), 0);
-      if (mode === 'standalone') {
-        assert.equal(worker.downloads[0].filename, item.downloadPath);
-        assert.deepEqual(Buffer.from(worker.downloads[0].url.split(',')[1], 'base64'), VIDEO);
-      } else assert.equal(count(worker, '/upload-clip/scene-1'), 1);
-    } finally { worker.restore(); }
-  });
-}
+test('standalone still polls known video and saves exact bytes without Gateway requests', async () => {
+  const item = { id: 'local-video', status: 'pending', phase: 'polling', videoMediaId: 'known-video', projectId: PROJECT, videoMode: 'text', sceneId: 'scene-1', slug: 'fixture', episodeCode: 'E01', label: 'Fixture video', target: 'download', downloadPath: 'StoryStudioVideos/Standalone/fixture.mp4' };
+  const worker = await boot({ mode: 'standalone', local: { videoQueue: [item] } });
+  try {
+    await waitFor(() => queueItem(worker)?.status === 'done'); await worker.settled();
+    assert.equal(count(worker, '/claim'), 0); assert.equal(generated(worker), 0);
+    assert.equal(worker.downloads[0].filename, item.downloadPath);
+    assert.deepEqual(Buffer.from(worker.downloads[0].url.split(',')[1], 'base64'), VIDEO);
+  } finally { worker.restore(); }
+});
 
 // Synthetic inventory and a controlled clock exercise scheduling, never real paid work.
 function pacingClock(t) {
@@ -976,21 +949,19 @@ test('a reply from the previous token cannot apply control to a new connection',
   } finally { worker.restore(); }
 });
 
-for (const mode of ['studio', 'standalone']) {
-  test(`paired ${mode} worker still acknowledges manager stop without claiming jobs`, async () => {
-    const worker = await boot({ mode, health: { control: { revision: 'stop-outside-gateway', dispatchEnabled: false,
-      closeRequested: true, pacing: { minSeconds: 0, maxSeconds: 0 } } } });
-    try {
-      await worker.send({ type: 'gatewayModeChanged' });
-      assert.ok(worker.scheduled.some((alarm) => alarm.name === 'gatewayWorkerTick'));
-      const state = lastTelemetry(worker).telemetry.state;
-      assert.equal(state.controlRevision, 'stop-outside-gateway');
-      assert.equal(state.paused, true); assert.equal(state.enabled, false); assert.equal(state.activity, 'idle');
-      assert.equal(count(worker, '/claim'), 0); assert.equal(worker.provider.length, 0);
-      assert.equal(Object.hasOwn(lastTelemetry(worker), 'safeToClose'), false);
-    } finally { worker.restore(); }
-  });
-}
+test('paired standalone worker still acknowledges manager stop without claiming jobs', async () => {
+  const worker = await boot({ mode: 'standalone', health: { control: { revision: 'stop-outside-gateway', dispatchEnabled: false,
+    closeRequested: true, pacing: { minSeconds: 0, maxSeconds: 0 } } } });
+  try {
+    await worker.send({ type: 'gatewayModeChanged' });
+    assert.ok(worker.scheduled.some((alarm) => alarm.name === 'gatewayWorkerTick'));
+    const state = lastTelemetry(worker).telemetry.state;
+    assert.equal(state.controlRevision, 'stop-outside-gateway');
+    assert.equal(state.paused, true); assert.equal(state.enabled, false); assert.equal(state.activity, 'idle');
+    assert.equal(count(worker, '/claim'), 0); assert.equal(worker.provider.length, 0);
+    assert.equal(Object.hasOwn(lastTelemetry(worker), 'safeToClose'), false);
+  } finally { worker.restore(); }
+});
 
 test('configured shared identity is local telemetry; readiness and credits stay unknown', async () => {
   const worker = await boot({ sync: pacedSync('gateway', { providerAccountProfileId: 'shared-account-profile' }) });

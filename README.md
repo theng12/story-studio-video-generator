@@ -1,7 +1,7 @@
 # Story Studio Video Generator
 
-A Manifest V3 Chrome extension for turning Story Studio scenes into video files. It is video-only,
-it uses the signed Flow website session, and it spends that account's credits.
+A Manifest V3 Chrome extension for generating videos with Google Flow. It is video-only, it uses
+the signed Flow website session, and it spends that account's credits.
 
 Two things are never traded away: **a paid submission whose outcome is unknown is never replayed**,
 and **retained media is never regenerated to retry a delivery**. Persist the returned media ID
@@ -12,11 +12,15 @@ keys; a key from one source is never used for the other.
 
 ## Modes
 
-`studio`, `standalone` and `gateway`. The first two are unchanged and untouched by gateway work.
-Gateway items are tagged with `gatewayJobId` and never routed through the studio/standalone UI paths.
+Two modes: **Standalone** (default) and **Gateway Studio**.
 
-The queue is persistent, sequential, deduplicated and independent of the side panel. Story Studio
-clip ingestion and Downloads naming are preserved.
+Standalone takes local video prompts, uses the selected Flow workspace and saves finished files to
+Downloads. Gateway Studio claims jobs from a gateway and reports them through the same queue. Gateway
+items are tagged with `gatewayJobId` and never routed through the standalone panel paths. A stored
+older mode choice (including the removed Story Studio mode) moves silently to Standalone.
+
+The queue is persistent, sequential, deduplicated and independent of the side panel. Downloads naming
+is preserved.
 
 ## Worker contract v1
 
@@ -113,21 +117,18 @@ no developer API key, billing account or separate route. The panel shows live in
 fallback catalog. The fallback preserves historical Omni model and length references; those are not
 evidence of the current transport, so every mode refuses new work until a current request mapping is
 verified, and known media or retained Gateway bytes still use their recovery paths without generating
-again. The Flow address is a Settings field: if Google moves Flow, paste the new address and grant
-site access there.
+again. The Flow address is fixed in code: if Google moves Flow, that is a code change, not a setting.
 
 ## Discovery and control parity
 
 All three generator extensions must list new models dynamically and carry new controls and durations
-through Story and Gateway. An observed listing, a verified request schema, control support and a
-successful generation are four distinct evidence states; a listing proves none of the others. The
+through Standalone and Gateway. An observed listing, a verified request schema, control support and
+a successful generation are four distinct evidence states; a listing proves none of the others. The
 checklist is in `AGENTS.md`.
 
-Scene timeline duration is retained separately from the selected clip length, including across
-reloads. The missing Story/Gateway counterpart contract must define discovery identity and freshness,
-each control's type and value domain, scene-versus-clip duration, immutable job binding,
-unknown-field round-trip and unsupported/refusal reporting. No wire schema or model/duration ID is
-invented here.
+The missing Gateway counterpart contract must define discovery identity and freshness, each control's
+type and value domain, clip duration, immutable job binding, unknown-field round-trip and
+unsupported/refusal reporting. No wire schema or model/duration ID is invented here.
 
 ## Install
 
@@ -139,9 +140,9 @@ There is no build step.
 
 ## Notes
 
-- Works with a running Story Studio workspace; finished videos are ingested into their scenes.
+- Standalone saves finished videos to Downloads; Gateway Studio returns them to the claiming gateway.
 - The queue survives closing and reopening the side panel.
 - Interrupted fresh-image or paid-video work needs explicit review before it can be regenerated or
-  resubmitted; known media IDs resume polling and ingest without a duplicate request.
+  resubmitted; known media IDs resume polling and delivery without a duplicate request.
 - Offline checks are recorded separately from live browser/provider evidence. Real Chrome and
   provider qualification is Stack's work, and a source checkpoint does not authorise it.

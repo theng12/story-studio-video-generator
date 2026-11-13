@@ -36,7 +36,7 @@
         </div>
         <div class="activity-copy">
           <span id="activeJob" class="activity-job">Ready to generate video</span>
-          <span id="activeJobMeta" class="activity-meta">Choose scenes, then queue them.</span>
+          <span id="activeJobMeta" class="activity-meta">Add prompts, then queue them.</span>
         </div>
         <div class="activity-progress-row">
           <div class="activity-progress" aria-hidden="true"><span id="activityProgressFill"></span></div>
@@ -66,19 +66,10 @@
 
     <label class="workflow-mode"><span>Mode</span>
       <select id="workingMode" aria-label="Working mode">
-        <option value="studio">Story Studio</option>
         <option value="standalone">Standalone</option>
         <option value="gateway">Gateway Studio</option>
       </select>
     </label>
-
-    <div class="form-grid form-grid-two">
-      <label>Video
-        <select id="assetType" disabled aria-label="Video asset type">
-          <option value="scene-videos">Scene videos</option>
-        </select>
-      </label>
-    </div>
 
     <div class="row end open-provider-row">
       <button id="openFlow" class="small" title="Open the generation workspace">↗ Open workspace</button>
@@ -102,12 +93,6 @@
           <select id="videoMode">
             <option value="image">Start image → video</option>
             <option value="text">Text prompt → video</option>
-          </select>
-        </label>
-        <label>Start image
-          <select id="videoSource">
-            <option value="existing">Existing scene image</option>
-            <option value="generate">Generate a fresh image first</option>
           </select>
         </label>
         <label>Aspect ratio
@@ -195,32 +180,6 @@
       </div>
     </details>
 
-    <section id="companionPane">
-      <div class="row end connection-row">
-        <span id="connStatus" class="muted" aria-live="polite"></span>
-        <div class="studio-connection-actions">
-          <button id="openStudioSettings" class="small connection-test connection-fix hidden" type="button">Update Studio URL</button>
-          <button id="testConn" class="small connection-test">Test Studio connection</button>
-        </div>
-      </div>
-      <div class="form-grid form-grid-two">
-        <label>Project
-          <select id="project"></select>
-        </label>
-        <label>Episode
-          <select id="episode"></select>
-        </label>
-      </div>
-      <div class="row between section-head">
-        <span class="muted" id="scenesSummary">Eligible scenes</span>
-        <div class="hgroup">
-          <button id="loadScenes" class="link small">Load scenes</button>
-          <button id="selectMissing" class="link small">Select missing</button>
-        </div>
-      </div>
-      <div id="scenes" class="sectionlist"></div>
-    </section>
-
     <section id="standalonePane" hidden>
       <div id="standaloneEditor" class="standalone-editor">
         <label>Video prompts
@@ -258,9 +217,6 @@
       <p id="gatewayStatus" class="muted" aria-live="polite"></p>
     </section>
 
-    <div id="studioBatchActions" class="batch-actions">
-      <button id="queueSelected" class="primary" disabled>Queue selected</button>
-    </div>
     <p id="status" class="muted"></p>
 
     <div id="whatsNewModal" class="overlay" hidden>

@@ -1,6 +1,6 @@
 // Gateway Studio worker mode — pure mapping between a gateway job and a queue
-// item. Kept separate from the studio/standalone paths so those modes are not
-// touched; the queue processor only sees ordinary items with a gatewayJobId.
+// item. Standalone rows stay untouched; the queue processor only sees ordinary
+// items, with gateway ones tagged by gatewayJobId.
 
 export const GATEWAY_KINDS = Object.freeze(['video']);
 const JOB_FIELDS = new Set(['jobId', 'kind', 'prompt', 'videoMode', 'modelKey', 'modelLabel', 'durationSec', 'resolution', 'aspectRatio', 'referenceImages', 'flowProjectId']);

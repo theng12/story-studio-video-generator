@@ -73,11 +73,14 @@ export function snapshotVideoModel(key, models, source, mode = 'image', duration
 }
 
 // The pre-1.2 catalog is retired with the old Flow REST API. Drop the legacy
-// fields so normalize() can select a model from the current catalog.
+// fields so normalize() can select a model from the current catalog. The old
+// Story Studio mode is gone too; its stored choice becomes Standalone.
 export function upgradeStoredVideoSettings(raw) {
   const stored = { ...(raw || {}) };
   delete stored.videoModel;
   delete stored['video' + 'Provider'];
   delete stored['save' + 'Target'];
+  delete stored.studioBaseUrl;
+  if ('mode' in stored && !['standalone', 'gateway'].includes(stored.mode)) stored.mode = 'standalone';
   return stored;
 }

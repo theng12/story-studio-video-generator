@@ -5,7 +5,6 @@ import {
   flowWorkspace,
   getGatewayToken,
 } from './lib/config.js';
-import { StudioClient } from './lib/story-studio.js';
 import { flowCommand } from './lib/flow-exec.js';
 import { inventoryResult, resolveVideoModel, snapshotVideoModel } from './lib/video-models.js';
 import { classifyInterruptedItem, hasActiveDuplicate, migrateStoredQueue, standaloneDownloadPath } from './lib/video-rules.js';
@@ -85,9 +84,9 @@ async function setQueue(queue) {
 }
 
 // ── Gateway Studio worker mode ─────────────────────────────────────────────
-// A separate third mode: the extension claims jobs instead of being driven
-// from the panel. Studio and standalone items never carry gatewayJobId, so the
-// existing paths run unchanged.
+// The second mode: the extension claims jobs instead of being driven from the
+// panel. Standalone items never carry gatewayJobId, so the existing path runs
+// unchanged.
 async function gatewaySettings() {
   return { ...(await getSettings()), gatewayToken: await getGatewayToken() };
 }
@@ -556,7 +555,6 @@ async function requeueForCooldown(id) {
 async function generateAndSave(item, settings, tab) {
   const projectId = normalizeFlowProjectId(item.projectId || settings.flowProjectId);
   if (!projectId) throw new Error('No Flow project selected.');
-  const studio = new StudioClient(settings.studioBaseUrl);
   const mode = item.videoMode === 'text' ? 'text' : 'image';
 
   if (!item.videoMediaId) {
@@ -615,16 +613,9 @@ async function generateAndSave(item, settings, tab) {
       await patchItem(item.id, { startMediaId: item.startMediaId, phase: 'prepared' });
       await setNextRun(settings, imagePauseMs);
     } else {
-      await writeStatus(`${item.label}: uploading the scene image…`, 'running');
-      const image = await studio.sceneImageBase64(item.slug, item.episodeCode, item.sceneId);
-      const uploaded = await runFlow(tab.id, 'uploadImage', {
-        projectId,
-        base64: image.base64,
-        mime: image.mime,
-        fileName: `${item.sceneId}.png`,
-      });
-      item.startMediaId = uploaded.mediaId;
-      await patchItem(item.id, { startMediaId: item.startMediaId, phase: 'prepared' });
+      // The removed Story Studio mode was the only producer of an existing
+      // scene image. Legacy rows must be requeued rather than guess a source.
+      throw new Error('This video needs a Story Studio scene image, and that mode was removed. Requeue it as a standalone prompt.');
     }
   }
 
@@ -669,7 +660,7 @@ async function generateAndSave(item, settings, tab) {
     await sleep(10000);
   }
 
-  await patchItem(item.id, { phase: item.target === 'download' ? 'downloading' : 'ingesting' });
+  await patchItem(item.id, { phase: 'downloading' });
   const mp4 = await fetchVideo(tab, projectId, item.videoMediaId);
   if (item.target === 'gateway') {
     const artifact = { binding: item.gatewayBinding, jobId: item.gatewayJobId, buffer: mp4 };
@@ -677,75 +668,17 @@ async function generateAndSave(item, settings, tab) {
     await patchItem(item.id, { phase: 'delivery_pending' });
     return deliverGatewayArtifact(item, artifact);
   }
-  if (item.target === 'download') {
-    const filename = `${String(item.downloadPath || 'StoryStudioVideos/Standalone/video.mp4').replace(/\.(mp4|webm)$/i, '')}.mp4`;
-    await chrome.downloads.download({
-      url: `data:video/mp4;base64,${bufferToBase64(mp4)}`,
-      filename,
-      saveAs: false,
-      conflictAction: 'uniquify',
-    });
-    return filename;
+  if (item.target !== 'download') {
+    throw new Error('This video has no delivery target. Requeue it as a standalone prompt.');
   }
-  await studio.uploadClip(item.slug, item.episodeCode, item.sceneId, mp4);
-  return `${item.sceneId}.mp4`;
-}
-
-function itemKey(item) {
-  return `${item.slug}::${item.episodeCode}::${item.sceneId}`;
-}
-
-async function enqueueScenes(payload) {
-  const settings = await getSettings();
-  const projectId = normalizeFlowProjectId(payload.projectId || settings.flowProjectId);
-  if (!projectId) throw new Error('Select a Flow project before queuing videos.');
-  const mode = payload.videoMode === 'text' ? 'text' : 'image';
-  const inventory = await refreshFlowModels();
-  const queueModel = snapshotVideoModel(payload.videoModelKey, inventory.models, inventory.source, mode, payload.durationSec);
-  const queue = await getQueue();
-  const active = new Set(
-    queue
-      .filter((item) => ['pending', 'running'].includes(item.status))
-      .map(itemKey)
-  );
-  let added = 0;
-  let skipped = 0;
-  for (const scene of payload.scenes || []) {
-    const item = {
-      id: `${Date.now()}_${sequence++}`,
-      status: 'pending',
-      phase: 'queued',
-      queuedAt: Date.now(),
-      slug: payload.slug,
-      projectName: payload.projectName || payload.slug,
-      episodeCode: payload.episodeCode,
-      episodeTitle: payload.episodeTitle || '',
-      sceneId: scene.id,
-      label: `${payload.episodeCode} · ${scene.label || scene.id}`,
-      motionPrompt: scene.motionPrompt || '',
-      imagePrompt: scene.imagePrompt || '',
-      sceneDurationSec: scene.durationSec,
-      projectId,
-      ...queueModel,
-      videoMode: mode,
-      videoSource: mode === 'image' ? payload.videoSource || settings.videoSource : null,
-      imageModel: settings.imageModel,
-      aspectRatio: payload.aspectRatio || settings.aspectRatio,
-    };
-    if (hasActiveDuplicate(queue, item)) {
-      skipped++;
-      continue;
-    }
-    queue.push(item);
-    added++;
-  }
-  await setQueue(queue);
-  if (added) {
-    await chrome.storage.local.remove(PAUSED_KEY);
-    createAlarm();
-    processQueue();
-  }
-  return { ok: true, added, skipped };
+  const filename = `${String(item.downloadPath || 'StoryStudioVideos/Standalone/video.mp4').replace(/\.(mp4|webm)$/i, '')}.mp4`;
+  await chrome.downloads.download({
+    url: `data:video/mp4;base64,${bufferToBase64(mp4)}`,
+    filename,
+    saveAs: false,
+    conflictAction: 'uniquify',
+  });
+  return filename;
 }
 
 function standaloneSceneId(prompt) {
@@ -1032,9 +965,6 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         }))
       );
       return true;
-    case 'enqueueScenes':
-      reply(enqueueScenes(message.payload));
-      return true;
     case 'enqueueStandalone':
       reply(enqueueStandalone(message.payload));
       return true;
@@ -1114,7 +1044,7 @@ startupReady.then(() => {
 async function accountProbeSelfCheck() {
   try {
     const settings = await getSettings();
-    if (settings.mode !== 'gateway' && settings.gatewayModeEnabled !== true) return;
+    if (settings.mode !== 'gateway') return;
     const tabs = await chrome.tabs.query({ url: flowWorkspace(settings).match });
     const tab = tabs.find((entry) => entry.status === 'complete');
     if (!tab) return;

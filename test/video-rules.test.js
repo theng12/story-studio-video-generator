@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { classifyInterruptedItem, eligibleVideoScenes, hasActiveDuplicate, migrateStoredQueue, standaloneDownloadPath } from '../src/lib/video-rules.js';
+import { classifyInterruptedItem, hasActiveDuplicate, migrateStoredQueue, standaloneDownloadPath } from '../src/lib/video-rules.js';
 import { readFile } from 'node:fs/promises';
 
 test('quarantines interrupted fresh-image submission without a media id', () => {
@@ -25,7 +25,7 @@ test('modern unknown submission migration is persisted once and then stable', ()
   assert.equal(first.queue[0].status, 'ambiguous');
   assert.equal(first.queue[0].ambiguityKind, 'video');
   assert.equal(migrateStoredQueue(first.queue).changed, false);
-  const active = migrateStoredQueue([{ id: 'active', videoMode: 'text', videoModelKey: 'current', status: 'running', phase: 'submitting' }], { recoverSubmissions: false });
+  const active = migrateStoredQueue([{ id: 'active', videoMode: 'text', videoModelKey: 'current', status: 'running', phase: 'submitting', target: 'download' }], { recoverSubmissions: false });
   assert.equal(active.changed, false);
   assert.equal(active.queue[0].status, 'running');
 });
@@ -34,12 +34,10 @@ test('deduplicates only active equivalent work including generation settings', (
   const item = { slug: 'p', episodeCode: 'E1', sceneId: 's1', videoMode: 'image', videoModelKey: 'veo_x', aspectRatio: '16:9', videoSource: 'existing' };
   assert.equal(hasActiveDuplicate([{ ...item, status: 'pending' }], item), true); assert.equal(hasActiveDuplicate([{ ...item, status: 'done' }], item), false); assert.equal(hasActiveDuplicate([{ ...item, status: 'running', videoModelKey: 'veo_y' }], item), false); assert.equal(hasActiveDuplicate([{ ...item, status: 'pending', videoMode: 'text' }], item), false);
 });
-test('selects only Story Studio scenes eligible for video', () => {
-  const review = { animate_min_seconds: 4, scenes: [{ id: 'ok', scene_index: 1, approved: true, image_filename: '1.png', motion_prompt: 'pan', start_sec: 0, end_sec: 4 }, { id: 'visual-only', scene_index: 2, approved: true, image_filename: '2.png', visual_prompt: 'a wide shot', start_sec: 0, end_sec: 4 }, { id: 'short', scene_index: 3, approved: true, image_filename: '3.png', motion_prompt: 'pan', start_sec: 0, end_sec: 3 }, { id: 'blank', scene_index: 4, approved: true, image_filename: '4.png', visual_prompt: '   ', start_sec: 0, end_sec: 5 }, { id: 'no-image', scene_index: 5, approved: true, image_filename: null, motion_prompt: 'pan', start_sec: 0, end_sec: 5 }] };
-  const eligible = eligibleVideoScenes(review);
-  assert.deepEqual(eligible.map((scene) => scene.id), ['ok', 'visual-only']);
-  assert.equal(eligible[1].motionPrompt, 'a wide shot');
-  assert.equal(eligible[1].imagePrompt, 'a wide shot');
+test('migrates a removed Story Studio row to a standalone download instead of dropping it', () => {
+  const { queue } = migrateStoredQueue([{ id: 'legacy-scene', status: 'pending', phase: 'polling', videoMediaId: 'video/1', sceneId: 'scene-9' }]);
+  assert.equal(queue[0].target, 'download');
+  assert.equal(queue[0].downloadPath, standaloneDownloadPath('scene-9'));
 });
 test('uses a stable standalone Downloads path', () => assert.equal(standaloneDownloadPath('standalone_abc_01'), 'StoryStudioVideos/Standalone/standalone_abc_01.mp4'));
 test('removes proven-dead video state', async () => {

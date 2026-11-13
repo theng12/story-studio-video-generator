@@ -14,9 +14,6 @@
   --link: #0f766e;
   --ok: #0a7a0a;
   --review: #7c3aed;
-  --badge-fg: #0a7a0a;
-  --badge-bg: #f2fbf2;
-  --badge-border: #cdebcd;
   --overlay-bg: rgba(0, 0, 0, 0.35);
   --dialog-shadow: rgba(0, 0, 0, 0.2);
 }
@@ -37,9 +34,6 @@
   --link: #67d4d1;
   --ok: #5cc95c;
   --review: #c4a7ff;
-  --badge-fg: #7fdb7f;
-  --badge-bg: #1f2e1f;
-  --badge-border: #2f4a2f;
   --overlay-bg: rgba(0, 0, 0, 0.6);
   --dialog-shadow: rgba(0, 0, 0, 0.5);
 }
@@ -297,7 +291,6 @@ header .settings-gear:focus-visible { outline: 2px solid var(--accent); outline-
 .grow { flex: 1; }
 .muted { color: var(--muted); font-size: 12px; }
 .small { font-size: 12px; }
-.section-head { margin-top: 12px; }
 .workflow-mode {
   display: flex;
   align-items: center;
@@ -318,11 +311,6 @@ header .settings-gear:focus-visible { outline: 2px solid var(--accent); outline-
 .review-list li { overflow: hidden; padding: 9px 2px; border-bottom: 1px solid var(--divider); text-overflow: ellipsis; white-space: nowrap; }
 .review-actions { display: grid; grid-template-columns: minmax(0, .7fr) minmax(0, 1.3fr); gap: 12px; }
 .review-actions .primary { margin-top: 0; }
-.connection-row { flex-wrap: wrap; align-items: center; }
-.connection-test { font-weight: 600; }
-.studio-connection-actions { display: flex; align-items: center; gap: 8px; }
-.connection-fix { border-color: color-mix(in srgb, var(--danger) 60%, var(--border)); color: var(--danger); }
-#connStatus { text-align: right; }
 .open-provider-row { margin-top: 12px; }
 
 .advanced-panel {
@@ -375,41 +363,6 @@ header .settings-gear:focus-visible { outline: 2px solid var(--accent); outline-
 .settings-card label:first-child { margin-top: 0; }
 .workspace-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 
-.sectionlist {
-  max-height: 220px;
-  overflow-y: auto;
-  margin-top: 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-}
-.scene {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px;
-  border-bottom: 1px solid var(--divider);
-  color: var(--fg);
-  font-size: 14px;
-}
-.scene:last-child { border-bottom: none; }
-.scene input { width: auto; margin: 0; flex: none; }
-.scene .body { min-width: 0; flex: 1; }
-.scene-title { overflow: hidden; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-.prompt { overflow: hidden; color: var(--muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-.badge {
-  flex: none;
-  padding: 1px 6px;
-  border: 1px solid var(--badge-border);
-  border-radius: 999px;
-  color: var(--badge-fg);
-  background: var(--badge-bg);
-  font-size: 10px;
-}
-.badge.missing { color: var(--muted); border-color: var(--border); background: var(--surface); }
-.sectionlist .empty { padding: 12px; color: var(--muted); }
-
-.batch-actions { margin-top: 12px; }
-.batch-actions .primary { margin-top: 0; }
 .pace-card .mini,
 .mini { display: block; margin-bottom: 4px; color: var(--muted); font-size: 12px; }
 .pace-preset { margin-top: 12px; }

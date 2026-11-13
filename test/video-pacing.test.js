@@ -50,14 +50,14 @@ test('root settings load and save the same mode and gateway fields', async () =>
     const source = (await readFile(new URL('../src/options/options.js', import.meta.url), 'utf8'))
       .replace(/^import[\s\S]*?from ['"][^'"]+['"];\n/gm, '');
     const sandbox = { document, DEFAULTS, getSettings, saveSettings, initTheme: async () => {},
-      getCredentials: async () => ({}), getGatewayToken: async () => '',
-      saveCredentials: async () => {}, saveGatewayToken: async () => {},
+      getGatewayToken: async () => '',
+      saveGatewayToken: async () => {},
       setTimeout: () => 0, clearTimeout() {}, URL,
       chrome: { permissions: { contains: async () => true }, storage: { local: { get: async () => ({}) } },
         runtime: { sendMessage: async () => ({}) } },
     };
     await vm.runInNewContext(source + '\nload()', sandbox);
-    assert.equal(document.getElementById('mode').value, 'studio');
+    assert.equal(document.getElementById('mode').value, 'standalone');
     document.getElementById('mode').value = 'gateway';
     document.getElementById('gatewayUrl').value = 'http://127.0.0.1:9000';
     document.getElementById('gatewayWorkerId').value = 'worker-1';

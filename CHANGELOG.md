@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.3.23 — 2026-11-13
+
+- Only Standalone (default) and Gateway Studio remain. The old Story Studio mode and its connection,
+  project picker and ingest UI were removed.
+- A stored Studio choice moves to Standalone on load; nothing asks the user to choose again.
+- Pending Studio queue rows now save to Downloads instead of being dropped.
+
 ## 1.3.22 — 2026-11-13
 
 - Flow RPC ids are no longer hard-coded in the shipped command: a MAIN-world recorder learns them from the live page's batchexecute exchanges, with the captured ids kept only as editable fallback values in Settings (Flow request ids, advanced).

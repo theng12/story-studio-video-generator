@@ -12,9 +12,6 @@
       .settings-wrap > header { margin-bottom: 14px; }
       .settings-wrap > header h1 { font-size: 16px; }
       .settings-section { margin-top: 12px; }
-      .settings-section[open] summary { color: var(--fg); }
-      .settings-section .settings-card { padding: 10px; }
-      .settings-section .form-grid { margin-top: 8px; }
       .settings-section .row { align-items: end; }
       .settings-section .row label { flex: 1; }
       .settings-section .row button { flex: none; margin-bottom: 0; }
@@ -47,38 +44,10 @@
         <span class="settings-section-title">Mode</span>
         <label>Provider
           <select id="mode">
-            <option value="studio">Story Studio</option>
             <option value="standalone">Standalone</option>
             <option value="gateway">Gateway Studio</option>
           </select>
         </label>
-      </section>
-
-      <section class="settings-section" id="studioSection">
-        <span class="settings-section-title">Story Studio connection <span class="muted">(outside Gateway Studio)</span></span>
-        <label class="connection-url">Server URL
-          <input id="studioBaseUrl" type="url" placeholder="http://localhost:8766" />
-        </label>
-        <p class="hint connection-copy">Use <b>localhost</b> when Story Studio runs on this computer. For a remote or Tailscale server, grant site access, then sign in.</p>
-        <div class="connection-actions">
-          <button id="grantAccess" class="btn" type="button">Grant site access</button>
-          <button id="testConnection" class="btn" type="button">Test connection</button>
-        </div>
-        <div class="connection-feedback">
-          <span id="grantStatus" class="connection-note" aria-live="polite"></span>
-          <span id="testStatus" class="connection-note" aria-live="polite"></span>
-        </div>
-        <div class="connection-credentials">
-          <label>Username <span class="muted">(remote only)</span>
-            <input id="studioUsername" autocomplete="username" placeholder="Your username" />
-          </label>
-          <label>Password <span class="muted">(remote only)</span>
-            <input id="studioPassword" type="password" autocomplete="current-password" placeholder="Stored locally" />
-          </label>
-          <button id="login" class="btn" type="button">Sign in</button>
-        </div>
-        <p class="hint connection-login-hint">Sign in is only needed when your remote Story Studio server requires credentials.</p>
-        <p id="loginStatus" class="connection-note" aria-live="polite"></p>
       </section>
 
       <section class="settings-section" id="gatewaySection">
@@ -92,6 +61,9 @@
         <label>Worker token
           <input id="gatewayToken" type="password" autocomplete="off" placeholder="Bearer token" />
         </label>
+      </section>
+
+      <section class="settings-section">
         <span class="settings-section-title">Flow request ids (advanced)</span>
         <p class="hint">Resolved from the live page each time; these are only the fallback used when discovery cannot identify one. A Flow change is fixed here, without reinstalling.</p>
         <label>Generate image<input id="rpcIdGenerateImage" autocomplete="off" spellcheck="false" maxlength="32" /></label>

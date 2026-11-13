@@ -1,11 +1,3 @@
-export function isCurrentLoad(token, currentToken, snapshot, current) {
-  return token === currentToken && snapshot.slug === current.slug && snapshot.episodeCode === current.episodeCode;
-}
-
-export function sceneEnqueueContext(project, episode, scenes) {
-  return { slug: project.slug, projectName: project.name || project.slug, episodeCode: episode.code, episodeTitle: episode.title || '', scenes: [...scenes] };
-}
-
 export function ambiguityRetryCopy(item) {
   if (item.ambiguityKind === 'image') {
     return { title: 'Regenerate a fresh start image?', body: 'The earlier fresh start image request may have used credits. Regenerating the fresh start image may use credits twice.', confirmLabel: 'Regenerate image and accept risk', status: 'Fresh start image regeneration accepted with duplicate-credit risk.' };

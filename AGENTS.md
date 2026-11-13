@@ -7,12 +7,12 @@ and resume polling after interruption.
 Text-to-video (`YhhmEf`) and image-to-video (`MZZa6b`) are separate Flow RPCs with separate model
 keys; never use a model key across the two sources.
 
-Gateway Studio is a third, separate mode: the extension claims jobs and runs them through the same
+Gateway Studio is the second, separate mode: the extension claims jobs and runs them through the same
 queue. Keep gateway items tagged with `gatewayJobId` and do not route gateway work through the
-studio/standalone UI paths.
+standalone UI paths.
 
 Keep the queue persistent, sequential, deduplicated, and independent of the side panel. Preserve
-Story Studio clip ingestion and Downloads naming.
+Downloads naming.
 
 ## Owner decisions that bind
 
@@ -31,11 +31,11 @@ Story Studio clip ingestion and Downloads naming.
 - All three generator extensions must discover and list newly appearing models dynamically. An
   observed listing, a verified request schema, control support and a successful generation are four
   distinct evidence states; a listing proves none of the others.
-- Recheck new controls and durations at each release. Carry supported controls through Story and
+- Recheck new controls and durations at each release. Carry supported controls through Standalone and
   Gateway; keep scene duration separate from selected/generated clip length, including on reload.
 - Keep unknown request fields as inert metadata; never flatten them into queue execution state, drop
   them or default them. Refuse unsupported control mappings before submission.
-- Obtain the exact Story/Gateway counterpart contract for discovery identity, observation freshness,
+- Obtain the exact Gateway counterpart contract for discovery identity, observation freshness,
   control values, scene/clip duration, immutable job binding, unknown-field round-trip and refusal
   states. Do not invent that wire schema here.
 - Verify each executable model/source/duration/control combination against its actual sanitized

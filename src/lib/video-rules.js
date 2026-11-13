@@ -1,31 +1,11 @@
 const imageError = 'Fresh-image generation may have reached Flow. Inspect the Flow project before explicitly regenerating it.';
 const videoError = 'Paid video submission may have reached Flow. Inspect the Flow project before explicitly resubmitting it.';
 export const standaloneDownloadPath = (sceneId) => `StoryStudioVideos/Standalone/${sceneId}.mp4`;
-export function eligibleVideoScenes(review) {
-  const minimum = Number(review?.animate_min_seconds) || 0;
-  return (review?.scenes || []).flatMap((scene) => {
-    if (scene.approved !== true || scene.image_filename == null) return [];
-    // Story Studio only exposes motion_prompt when the episode's motion workflow
-    // is on; fall back to the visual prompt so motion-off episodes still queue.
-    const motionPrompt = String(scene.motion_prompt || scene.visual_prompt || '').trim();
-    const durationSec = Math.max(0, Number(scene.end_sec) - Number(scene.start_sec));
-    if (!motionPrompt || durationSec < minimum) return [];
-    return [{
-      id: scene.id,
-      sceneIndex: scene.scene_index,
-      label: `Scene ${scene.scene_index}`,
-      motionPrompt,
-      imagePrompt: String(scene.visual_prompt || scene.image_prompt || '').trim(),
-      durationSec,
-      hasClip: Boolean((scene.clip_exists && !scene.clip_stale) || scene.clip_filename || scene.video_filename),
-    }];
-  });
-}
 
 export function classifyInterruptedItem(item) {
   if (item.videoMediaId) return { status: 'pending', phase: 'polling' };
   if (item.phase === 'submitting') return { status: 'ambiguous', phase: 'submitting', ambiguityKind: 'video', error: videoError };
-  if (item.startMediaId) return { status: 'pending', phase: ['polling', 'downloading', 'ingesting'].includes(item.phase) ? item.phase : 'prepared' };
+  if (item.startMediaId) return { status: 'pending', phase: ['polling', 'downloading'].includes(item.phase) ? item.phase : 'prepared' };
   if (item.phase === 'image_submitting') return { status: 'ambiguous', phase: 'image_submitting', ambiguityKind: 'image', error: imageError };
   return { status: 'pending', phase: item.phase || 'queued' };
 }
@@ -38,6 +18,13 @@ export function migrateStoredQueue(queue, { recoverSubmissions = true } = {}) {
     const copy = { ...item };
     for (const key of ['videoProvider', 'videoModel', 'workflowId', 'remainingCredits']) { if (key in copy) { delete copy[key]; changed = true; } }
     if (copy.videoMode !== 'text' && copy.videoMode !== 'image') { copy.videoMode = 'image'; changed = true; }
+    // Story Studio rows had no download target. Preserve their bytes/polling by
+    // delivering to Standalone Downloads instead of dropping the work.
+    if (!copy.gatewayJobId && copy.target !== 'gateway' && copy.target !== 'download') {
+      copy.target = 'download';
+      copy.downloadPath = copy.downloadPath || standaloneDownloadPath(copy.sceneId || copy.id);
+      changed = true;
+    }
     if (recoverSubmissions && copy.phase === 'submitting' && !copy.videoMediaId) {
       const recovery = classifyInterruptedItem(copy);
       if (Object.entries(recovery).some(([key, value]) => copy[key] !== value)) {

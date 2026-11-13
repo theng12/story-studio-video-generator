@@ -1,17 +1,11 @@
 import { getSettings, saveSettings, getGatewayToken, saveGatewayToken } from '../lib/config.js';
-import { StudioClient } from '../lib/story-studio.js';
 import { initTheme } from '../lib/theme.js';
-import { eligibleVideoScenes } from '../lib/video-rules.js';
 import { FALLBACK_VIDEO_MODELS, defaultVideoModel, modelsForMode } from '../lib/video-models.js';
-import { ambiguityRetryCopy, isCurrentLoad, sceneEnqueueContext } from '../lib/video-panel.js';
+import { ambiguityRetryCopy } from '../lib/video-panel.js';
 
 const $ = (id) => document.getElementById(id);
 let settings;
 let gatewayToken = '';
-let studio;
-let projects = [];
-let episodes = [];
-let scenes = [];
 let elapsedStartedAt = 0;
 let latestLiveStatus = null;
 let activeCooldownUntil = 0;
@@ -29,7 +23,6 @@ function renderDurationState() {
       ? `${durationSec}s per clip. This length has a current request mapping for this model.`
       : `This length is unavailable for the selected model. ${model?.durationSec ? `Only ${model.durationSec}s has a request mapping.` : 'No request length has been captured.'} Refresh models or choose a verified combination.`;
 }
-let storyLoadToken = 0;
 
 function renderModelInventory(inventory) {
   const mode = settings.videoMode === 'text' ? 'text' : 'image';
@@ -80,66 +73,6 @@ function publicMessage(value) {
     .replace(/labs\.google\/fx/gi, 'the generation workspace');
 }
 
-function selectedScenes() {
-  return [...document.querySelectorAll('.scene input:checked')]
-    .map((input) => scenes[Number(input.dataset.index)])
-    .filter(Boolean);
-}
-
-function renderScenes() {
-  $('scenes').replaceChildren();
-  $('scenesSummary').textContent = `${scenes.length} eligible scene${scenes.length === 1 ? '' : 's'}`;
-
-  if (!scenes.length) {
-    const empty = document.createElement('div');
-    empty.className = 'empty';
-    empty.textContent = 'No eligible scenes found.';
-    $('scenes').appendChild(empty);
-  }
-
-  scenes.forEach((scene, index) => {
-    const row = document.createElement('label');
-    row.className = 'scene';
-
-    const checkbox = document.createElement('input');
-    checkbox.type = 'checkbox';
-    checkbox.dataset.index = String(index);
-    checkbox.checked = !scene.hasClip;
-    checkbox.disabled = scene.hasClip;
-    checkbox.addEventListener('change', updateQueueButton);
-
-    const body = document.createElement('div');
-    body.className = 'body';
-    const title = document.createElement('div');
-    title.className = 'scene-title';
-    title.textContent = scene.label;
-    const prompt = document.createElement('div');
-    prompt.className = 'prompt';
-    prompt.textContent = scene.motionPrompt || 'No motion prompt';
-    prompt.title = scene.motionPrompt || '';
-    body.append(title, prompt);
-
-    const badge = document.createElement('span');
-    badge.className = `badge ${scene.hasClip ? 'done' : 'missing'}`;
-    badge.textContent = scene.hasClip ? 'Has video' : 'Missing';
-
-    row.append(checkbox, body, badge);
-    $('scenes').appendChild(row);
-  });
-
-  updateQueueButton();
-}
-
-function updateQueueButton() {
-  const count = selectedScenes().length;
-  $('queueSelected').disabled = count === 0;
-  $('queueSelected').textContent = count ? `Queue selected (${count})` : 'Queue selected';
-}
-
-function isStandaloneMode() {
-  return settings?.mode === 'standalone';
-}
-
 function isGatewayMode() {
   return settings?.mode === 'gateway';
 }
@@ -156,30 +89,18 @@ function renderGatewaySettings() {
 }
 
 function renderWorkingMode() {
-  const standalone = isStandaloneMode();
   const gateway = isGatewayMode();
-  $('workingMode').value = gateway ? 'gateway' : standalone ? 'standalone' : 'studio';
-  $('companionPane').hidden = standalone || gateway;
-  $('standalonePane').hidden = !standalone || gateway;
+  $('workingMode').value = gateway ? 'gateway' : 'standalone';
+  $('standalonePane').hidden = gateway;
   $('gatewayPane').hidden = !gateway;
-  $('studioBatchActions').hidden = standalone || gateway;
-  const providerPanel = document.querySelector('.provider-settings-panel');
-  const workspacePanel = document.querySelector('.workspace-panel');
-  if (providerPanel) providerPanel.hidden = gateway;
-  if (workspacePanel) workspacePanel.hidden = gateway;
-  if (gateway) {
-    renderGatewaySettings();
-  } else {
-    $('videoSource').disabled = standalone;
-    $('videoSource').value = standalone ? 'generate' : settings.videoSource;
-  }
+  // Standalone shows the Flow workspace; Gateway work carries its own project.
+  document.querySelector('.workspace-panel').hidden = gateway;
+  if (gateway) renderGatewaySettings();
 }
 
 function renderVideoMode() {
   const text = settings.videoMode === 'text';
   $('videoMode').value = text ? 'text' : 'image';
-  $('videoSource').disabled = text || isStandaloneMode() || isGatewayMode();
-  if (!text) $('videoSource').value = isStandaloneMode() ? 'generate' : settings.videoSource;
 }
 
 async function changeVideoMode() {
@@ -224,9 +145,9 @@ async function claimGatewayNow() {
 }
 
 async function changeWorkingMode() {
-  const mode = ['studio', 'standalone', 'gateway'].includes($('workingMode').value)
+  const mode = ['standalone', 'gateway'].includes($('workingMode').value)
     ? $('workingMode').value
-    : 'studio';
+    : 'standalone';
   settings = await saveSettings({ mode });
   if (mode === 'gateway') {
     await saveGatewaySettings();
@@ -239,145 +160,7 @@ async function changeWorkingMode() {
   await chrome.runtime.sendMessage({ type: 'gatewayModeChanged' }).catch(() => {});
   renderWorkingMode();
   renderVideoMode();
-  if (isStandaloneMode()) {
-    setStatus('Standalone mode uses a local prompt and Downloads.', 'ok');
-    return;
-  }
-  await loadProjects();
-}
-
-async function loadProjects() {
-  setStatus('Loading Story Studio projects…');
-  const data = await studio.listProjects();
-  projects = Array.isArray(data) ? data : data.projects || [];
-  $('project').replaceChildren();
-
-  for (const project of projects) {
-    const option = document.createElement('option');
-    option.value = project.slug;
-    option.textContent = project.name || project.slug;
-    $('project').appendChild(option);
-  }
-
-  if (settings.lastProject && projects.some((project) => project.slug === settings.lastProject)) {
-    $('project').value = settings.lastProject;
-  }
-
-  if (!projects.length) {
-    episodes = [];
-    scenes = [];
-    $('episode').replaceChildren();
-    renderScenes();
-    setStatus('No Story Studio projects found.');
-    return;
-  }
-
-  await loadEpisodes();
-}
-
-async function testStudioConnection() {
-  const button = $('testConn');
-  const output = $('connStatus');
-  const setConnectionStatus = (text, color) => {
-    output.textContent = text;
-    output.style.color = color;
-  };
-  const testedAt = () => {
-    const now = new Date();
-    return `tested ${now.getHours()}:${String(now.getMinutes()).padStart(2, '0')}`;
-  };
-  const result = (state, detail, color) => {
-    setConnectionStatus(`${state} · ${testedAt()}${detail ? ` — ${detail}` : ''}`, color);
-    $('openStudioSettings').classList.toggle('hidden', state !== 'Failed');
-  };
-
-  button.disabled = true;
-  $('openStudioSettings').classList.add('hidden');
-  setConnectionStatus('Testing…', 'var(--muted)');
-  try {
-    const url = settings.studioBaseUrl || '';
-    const local = /localhost|127\.0\.0\.1|\[::1\]/.test(url);
-    if (!local) {
-      let pattern = null;
-      try {
-        const parsed = new URL(url);
-        pattern = `${parsed.protocol}//${parsed.hostname}/*`;
-      } catch {
-        // The request below reports an invalid configured URL clearly.
-      }
-      const granted = pattern
-        ? await chrome.permissions.contains({ origins: [pattern] }).catch(() => false)
-        : false;
-      if (!granted) {
-        result('Failed', 'update extension site access for this server.', 'var(--danger)');
-        return;
-      }
-    }
-    const data = await studio.listProjects();
-    const count = Array.isArray(data) ? data.length : (data?.projects || []).length;
-    result('Connected', `${count} project${count === 1 ? '' : 's'}.`, 'var(--ok)');
-  } catch (error) {
-    const local = /localhost|127\.0\.0\.1|\[::1\]/.test(settings.studioBaseUrl || '');
-    result(
-      'Failed',
-      `${publicMessage(error.message)}. ${local ? 'Is Story Studio running?' : 'Check the server, site access, and sign-in.'}`,
-      'var(--danger)'
-    );
-  } finally {
-    button.disabled = false;
-  }
-}
-
-async function loadEpisodes() {
-  const slug = $('project').value;
-  if (!slug) return;
-  const token = ++storyLoadToken;
-  setStatus('Loading episodes…');
-  const data = await studio.listEpisodes(slug);
-  if (!isCurrentLoad(token, storyLoadToken, { slug, episodeCode: '' }, { slug: $('project').value, episodeCode: '' })) return;
-  episodes = (Array.isArray(data) ? data : data.episodes || [])
-    .map((episode) => ({
-      code: episode.episode_code || episode.code,
-      title: episode.title || '',
-      hasPlan: Boolean(episode.status?.scene_plan),
-    }))
-    .filter((episode) => episode.code && episode.hasPlan);
-  $('episode').replaceChildren();
-
-  for (const episode of episodes) {
-    const option = document.createElement('option');
-    option.value = episode.code;
-    option.textContent = `${episode.code}${episode.title ? ` — ${episode.title}` : ''}`;
-    $('episode').appendChild(option);
-  }
-
-  if (settings.lastEpisode && episodes.some((episode) => episode.code === settings.lastEpisode)) {
-    $('episode').value = settings.lastEpisode;
-  }
-
-  scenes = [];
-  renderScenes();
-  settings = await saveSettings({ lastProject: slug });
-  setStatus(`${episodes.length} planned episode${episodes.length === 1 ? '' : 's'} available.`);
-}
-
-async function loadScenes() {
-  const slug = $('project').value;
-  const code = $('episode').value;
-  if (!slug || !code) {
-    setStatus('Choose a project and episode first.', 'failed');
-    return;
-  }
-
-  const token = ++storyLoadToken;
-  setStatus('Loading eligible video scenes…');
-  const data = await studio.sceneReview(slug, code);
-  if (!isCurrentLoad(token, storyLoadToken, { slug, episodeCode: code }, { slug: $('project').value, episodeCode: $('episode').value })) return;
-  scenes = eligibleVideoScenes(data);
-
-  settings = await saveSettings({ lastProject: slug, lastEpisode: code });
-  renderScenes();
-  setStatus(`${scenes.length} approved scene${scenes.length === 1 ? '' : 's'} ready to review.`);
+  setStatus('Standalone mode uses a local prompt and Downloads.', 'ok');
 }
 
 async function useCurrentWorkspace() {
@@ -425,43 +208,6 @@ function showConfirmation({ title, body, confirmLabel, onConfirm }) {
       $('confirmOk').disabled = false;
     }
   };
-}
-
-function confirmQueue() {
-  const selected = selectedScenes();
-  if (!selected.length) return;
-  if (!settings.flowProjectId) {
-    setStatus('Select a generation workspace first.', 'failed');
-    return;
-  }
-
-  const project = projects.find((candidate) => candidate.slug === $('project').value);
-  const episode = episodes.find((candidate) => candidate.code === $('episode').value);
-  if (!project || !episode) return setStatus('Choose a project and episode first.', 'failed');
-  const context = sceneEnqueueContext(project, episode, selected);
-  showConfirmation({
-    title: 'Generate scene videos?',
-    body:
-      `${selected.length} video${selected.length === 1 ? '' : 's'} will run sequentially. ` +
-      'Each request may use account credits.',
-    confirmLabel: 'Use credits & queue',
-    onConfirm: async () => {
-      const response = await chrome.runtime.sendMessage({
-        type: 'enqueueScenes',
-        payload: {
-          ...context,
-          projectId: settings.flowProjectId,
-          ...modelSnapshot(),
-          videoMode: settings.videoMode,
-          videoSource: settings.videoSource,
-          aspectRatio: settings.aspectRatio,
-        },
-      });
-      if (!response?.ok) throw new Error(response?.error || 'Could not queue videos.');
-      setStatus(`Queued ${response.added}${response.skipped ? `; skipped ${response.skipped}` : ''}.`, 'ok');
-      await pollQueue();
-    },
-  });
 }
 
 function parseStandalonePrompts(value) {
@@ -576,7 +322,6 @@ function phaseLabel(phase) {
     submitting: 'Submitting request',
     polling: 'Generating video',
     downloading: 'Saving video',
-    ingesting: 'Saving to Story Studio',
     done: 'Saved',
   }[phase] || 'Processing';
 }
@@ -643,7 +388,7 @@ function renderQueue(queue, state, live) {
   if (running) {
     $('activeJob').textContent = running.label;
     $('activeJobMeta').textContent =
-      `${phaseLabel(running.phase)} · Story Studio`;
+      `${phaseLabel(running.phase)} · ${running.gatewayJobId ? 'Gateway Studio' : 'Standalone'}`;
   } else if (counts.ambiguous) {
     $('activeJob').textContent = 'A video needs review';
     $('activeJobMeta').textContent = 'The request may already exist. Inspect the workspace before resubmitting.';
@@ -661,7 +406,7 @@ function renderQueue(queue, state, live) {
       `${counts.done} saved · ${counts.failed} failed · ${counts.ambiguous} need review`;
   } else {
     $('activeJob').textContent = 'Ready to generate video';
-    $('activeJobMeta').textContent = 'Choose scenes, then queue them.';
+    $('activeJobMeta').textContent = 'Add prompts, then queue them.';
   }
 
   const progress = total ? Math.round(((finished + counts.running * .45) / total) * 100) : 0;
@@ -932,14 +677,12 @@ async function init() {
 
   settings = await getSettings();
   gatewayToken = await getGatewayToken();
-  studio = new StudioClient(settings.studioBaseUrl);
   // A failed inventory refresh must not abort init: everything below wires the
   // controls, so throwing here leaves the whole side panel inert.
   await refreshModels().catch((error) => {
     renderModelInventory({ source: 'fallback', models: FALLBACK_VIDEO_MODELS });
     setStatus(publicMessage(error.message), 'failed');
   });
-  $('videoSource').value = settings.videoSource;
   $('aspectRatio').value = settings.aspectRatio;
   renderWorkingMode();
   renderVideoMode();
@@ -949,27 +692,12 @@ async function init() {
   initWhatsNew();
 
   $('openOptions').addEventListener('click', () => chrome.runtime.openOptionsPage());
-  $('openStudioSettings').addEventListener('click', () => chrome.runtime.openOptionsPage());
-  $('testConn').addEventListener('click', testStudioConnection);
   $('workingMode').addEventListener('change', () => {
     changeWorkingMode().catch((error) => setStatus(publicMessage(error.message), 'failed'));
   });
   $('videoMode').addEventListener('change', () => {
     changeVideoMode().catch((error) => setStatus(publicMessage(error.message), 'failed'));
   });
-  $('project').addEventListener('change', () => {
-    loadEpisodes().catch((error) => setStatus(publicMessage(error.message), 'failed'));
-  });
-  $('loadScenes').addEventListener('click', () => {
-    loadScenes().catch((error) => setStatus(publicMessage(error.message), 'failed'));
-  });
-  $('selectMissing').addEventListener('click', () => {
-    document.querySelectorAll('.scene input:not(:disabled)').forEach((input) => {
-      input.checked = true;
-    });
-    updateQueueButton();
-  });
-  $('queueSelected').addEventListener('click', confirmQueue);
   $('reviewStandalone').addEventListener('click', reviewStandalonePrompts);
   $('editStandalone').addEventListener('click', showStandaloneEditor);
   $('queueStandalone').addEventListener('click', confirmStandalone);
@@ -1042,11 +770,9 @@ async function init() {
     settings = await saveSettings({ videoDurationSec: Number($('videoDurationSec').value) });
     renderDurationState();
   });
-  for (const field of ['videoSource', 'aspectRatio']) {
-    $(field).addEventListener('change', async () => {
-      settings = await saveSettings({ [field]: $(field).value });
-    });
-  }
+  $('aspectRatio').addEventListener('change', async () => {
+    settings = await saveSettings({ aspectRatio: $('aspectRatio').value });
+  });
   $('humanPacePreset').addEventListener('change', () => {
     onPacePreset().catch((error) => setStatus(publicMessage(error.message), 'failed'));
   });
@@ -1068,9 +794,6 @@ async function init() {
     saveCooldownCustom().catch((error) => setStatus(publicMessage(error.message), 'failed'));
   });
 
-  if (!isStandaloneMode() && !isGatewayMode()) {
-    await loadProjects().catch((error) => setStatus(`Story Studio: ${publicMessage(error.message)}`, 'failed'));
-  }
   await pollQueue();
   setInterval(pollQueue, 1500);
   setInterval(() => {
