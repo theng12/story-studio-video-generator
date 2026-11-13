@@ -424,12 +424,30 @@ export async function flowCommand(command) {
       const stable = String(raw || '').replace(/[^A-Za-z0-9_.:-]/g, '-').slice(0, 100);
       return stable ? `flow.${stable}` : '';
     };
+    // A moved Flow build can hide the account fields; a visibly signed-in project page still
+    // counts as signed in, with an unknown balance (the price quote is what gates spending).
+    const visibleSignedIn = () => {
+      try {
+        return Boolean(document.querySelector(
+          '[aria-label*="Google Account" i], a[href*="accounts.google.com"], [data-email], img[alt*="profile" i]'));
+      } catch {
+        return false;
+      }
+    };
     // Read-only: reports the provider account, its credit balance and, when a
     // preview is supplied, the observed price for that job. It never generates.
     const inspectAccount = async () => {
-      wiz();
-      const accountId = providerAccountId();
-      if (!accountId) throw new Error('Flow exposed no stable account identity.');
+      let accountId = '';
+      let probeError = null;
+      try {
+        wiz();
+        accountId = providerAccountId();
+      } catch (error) {
+        probeError = String(error?.message || error);
+      }
+      const fallback = !accountId && visibleSignedIn();
+      if (fallback) accountId = 'flow.visible-signed-in';
+      if (!accountId) throw new Error(probeError || 'Flow exposed no stable account identity.');
       const observedAt = new Date().toISOString();
       let balance = null;
       try {
@@ -438,7 +456,8 @@ export async function flowCommand(command) {
         // Unknown stays unknown; it is never reported as zero.
       }
       const account = {
-        schema: 1, provider: 'flow', accountId, source: 'extension.video', observedAt,
+        schema: 1, provider: 'flow', accountId,
+        source: fallback ? 'flow.visible-signed-in' : 'extension.video', observedAt,
         connection: 'connected', signIn: 'signed_in',
         // Readiness follows the page. An unreadable balance is unknown-priced, not
         // unready; the quote gate on an observed price is what stops spending.

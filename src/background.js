@@ -261,7 +261,14 @@ async function gatewayTick() {
     if (await holdForCooldown(current, { label: 'Gateway video' }) || await waitForPacing(current, { label: 'Gateway video' })) return null;
     const tab = tabs.find((entry) => entry.status === 'complete');
     const maxAge = health.accountMaxAgeSeconds;
-    const inspected = await runFlow(tab.id, 'inspectAccount');
+    let inspected;
+    try {
+      inspected = await runFlow(tab.id, 'inspectAccount');
+    } catch (error) {
+      // Name the probe failure instead of looking like a signed-out worker.
+      await writeStatus(`Flow is open but Relay could not read the account (${String(error?.message || error)}). Retrying on the next check.`, 'err');
+      return null;
+    }
     const account = Number.isFinite(maxAge) && maxAge > 0 ? observedAccount(inspected.account, maxAge) : null;
     await publishGatewayState(current, account);
     let observation = await gatewayObservation(await gatewaySettings(), account);

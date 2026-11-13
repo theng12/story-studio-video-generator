@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.21 — 2026-11-13
+
+- A visibly signed-in Flow project whose account fields are missing claims with an unknown balance instead of refusing; the price quote still gates any spending.
+- The panel names a failed account read ("Flow is open but Relay could not read the account (<error>). Retrying on the next check") instead of looking signed out.
+
 ## 1.3.20 — 2026-11-12
 
 - Google Flow settings were removed; the address is fixed.
