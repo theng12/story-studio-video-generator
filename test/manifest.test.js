@@ -27,3 +27,11 @@ test('a fixed key keeps the extension id stable across versioned folders', () =>
   const id = [...hex].map((digit) => String.fromCharCode(97 + parseInt(digit, 16))).join('');
   assert.equal(id, 'jjmjhbmfklljgcfggmgmbodbhlfbmfof');
 });
+
+test('the Gateway pane shows the Relay-owned connection honestly', () => {
+  const popup = readFileSync(new URL('../src/popup/popup.js', import.meta.url), 'utf8');
+  assert.match(popup, /Connected through Relay/, 'the seeded state is named');
+  assert.match(popup, /gatewayRelayMachineId/, 'the Relay marker is read');
+  assert.match(popup, /gatewayReadiness/, 'the shared readiness object is read');
+  assert.match(popup, /readiness\.reason/, 'a blocked readiness shows its reason');
+});
