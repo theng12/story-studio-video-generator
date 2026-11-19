@@ -93,11 +93,14 @@ test('an unsettled claim marker expires on Gateway\'s lease, never on a person',
   const lease = 600;
   // Inside the advertised lease this is still a real hold, so a second claim is refused.
   assert.equal(claimMarkerIsStale({ at: now - 60_000 }, lease, now), false);
+  // The boundary itself: at exactly the lease Gateway's reaper has not yet let the job go.
+  assert.equal(claimMarkerIsStale({ at: now - lease * 1000 }, lease, now), false);
   // Past the lease plus the 30 s settle window, Gateway has already let the job go.
-  assert.equal(claimMarkerIsStale({ at: now - 631_000 }, lease, now), true);
-  assert.equal(claimMarkerIsStale({ at: now - 629_000 }, lease, now), false);
-  // A lease Gateway did not state is never expired on a guess: the worker keeps holding.
+  assert.equal(claimMarkerIsStale({ at: now - (lease + 31) * 1000 }, lease, now), true);
+  assert.equal(claimMarkerIsStale({ at: now - (lease + 29) * 1000 }, lease, now), false);
+  // A lease Gateway did not state — the health call failed — is never expired on a guess.
   assert.equal(claimMarkerIsStale({ at: now - 10 * 24 * 3600_000 }, undefined, now), false);
+  assert.equal(claimMarkerIsStale({ at: now - 10 * 24 * 3600_000 }, null, now), false);
   assert.equal(claimMarkerIsStale({ at: now - 10 * 24 * 3600_000 }, NaN, now), false);
   // No marker, or no usable time in it: nothing is judged stale here (the caller stamps `at`).
   assert.equal(claimMarkerIsStale(null, lease, now), false);

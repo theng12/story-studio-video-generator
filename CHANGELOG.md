@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.3.30 — 2026-11-20
+- Same claim rule as 1.3.29, with its edges proven: a marker still holds at exactly Gateway's lease and is released 31 s later, and a lease the health call did not return expires nothing. The panel's mode switch is now tested against the real code — before, the test pulled one function out of the panel and left the sibling it calls behind, so it failed on a reference the shipped panel always has.
+
 ## 1.3.29 — 2026-11-20
 - An uncertain Gateway claim no longer needs a person to unstick it. If a claim went unanswered, this extension used to refuse every new claim until someone reviewed it in Gateway. It now expires on Gateway's own lease clock: past the lease Gateway has already let the job go, so this worker claims again and says what happened. The error is still shown; only the wait for a human is gone. An unreadable lease is never guessed at, so a live claim is never dropped early.
 

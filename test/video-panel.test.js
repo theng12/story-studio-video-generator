@@ -11,11 +11,17 @@ test('describes the billed retry action for image and video ambiguity', () => {
   assert.match(ambiguityRetryCopy({ ambiguityKind: 'video' }).body, /paid video/);
 });
 
+// Runs real functions out of popup.js. Pass every function the one under test calls: the module
+// hoists them together, so extracting only one leaves its siblings undefined.
 async function callPanelFunction(name, sandbox) {
+  const names = [name].flat();
   const source = await readFile(new URL('../src/popup/popup.js', import.meta.url), 'utf8');
-  const fn = source.match(new RegExp(`async function ${name}\\(\\) \\{[\\s\\S]*?\\n\\}`))?.[0];
-  assert.ok(fn, `Actual panel function ${name} is missing.`);
-  return runInNewContext(`${fn}\n${name}()`, sandbox);
+  const fns = names.map((n) => {
+    const fn = source.match(new RegExp(`async function ${n}\\(\\) \\{[\\s\\S]*?\\n\\}`))?.[0];
+    assert.ok(fn, `Actual panel function ${n} is missing.`);
+    return fn;
+  });
+  return runInNewContext(`${fns.join('\n')}\n${names.at(-1)}()`, sandbox);
 }
 
 test('Gateway panel preserves authenticated worker id and saving does not claim work', async () => {
@@ -56,11 +62,14 @@ test('Gateway panel refreshes the worker identity after a successful connection 
 
 test('Gateway panel starts polling when the user explicitly selects Gateway mode', async () => {
   const events = [];
-  await callPanelFunction('changeWorkingMode', {
+  await callPanelFunction(['loadGatewayRelayState', 'changeWorkingMode'], {
     settings: {}, $: () => ({ value: 'gateway' }), saveSettings: async (value) => value,
     async saveGatewaySettings() { events.push('saved'); },
-    chrome: { runtime: { async sendMessage(message) { events.push(message.type); return { ok: true }; } } },
-    renderWorkingMode() {}, renderVideoMode() {}, setStatus() {},
+    chrome: {
+      runtime: { async sendMessage(message) { events.push(message.type); return { ok: true }; } },
+      storage: { local: { async get() { events.push('relayState'); return {}; } } },
+    },
+    renderWorkingMode() {}, renderVideoMode() {}, renderGatewayRelayState() {}, setStatus() {},
   });
-  assert.deepEqual(events, ['saved', 'gatewayModeChanged']);
+  assert.deepEqual(events, ['saved', 'gatewayModeChanged', 'relayState']);
 });
