@@ -2,6 +2,24 @@
 // item. Standalone rows stay untouched; the queue processor only sees ordinary
 // items, with gateway ones tagged by gatewayJobId.
 
+// The Gateway owns the claim truth: it holds a job whose worker has been silent past its own
+// advertised `leaseSeconds` (GET /api/workers/health). The local claim marker is only a guard
+// against claiming twice, so it expires on that same clock instead of waiting for a person.
+// An unreadable lease (`leaseSeconds` undefined — health could not be read) is never treated as
+// expired: we cannot prove Gateway let the job go. One settle window is added so our marker
+// never expires before Gateway's own reaper.
+export const GATEWAY_CLAIM_SETTLE_SECONDS = 30;
+export function claimMarkerIsStale(marker, leaseSeconds, now = Date.now()) {
+  if (!marker || typeof marker !== 'object') return false;
+  const at = Number(marker.at);
+  // A marker with no usable time cannot be proven old, so it is never judged stale here. The
+  // caller stamps one on first sight, which bounds it to one lease from then.
+  if (!Number.isFinite(at) || at <= 0) return false;
+  const lease = Number(leaseSeconds);
+  if (!Number.isFinite(lease) || lease <= 0) return false; // lease unknown: hold, never guess
+  return now - at > (lease + GATEWAY_CLAIM_SETTLE_SECONDS) * 1000;
+}
+
 export const GATEWAY_KINDS = Object.freeze(['video']);
 const JOB_FIELDS = new Set(['jobId', 'kind', 'prompt', 'videoMode', 'modelKey', 'modelLabel', 'durationSec', 'resolution', 'aspectRatio', 'referenceImages', 'flowProjectId']);
 

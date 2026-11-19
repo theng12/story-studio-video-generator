@@ -8,7 +8,7 @@ import {
 import { flowCommand } from './lib/flow-exec.js';
 import { inventoryResult, resolveVideoModel, snapshotVideoModel } from './lib/video-models.js';
 import { classifyInterruptedItem, hasActiveDuplicate, migrateStoredQueue, standaloneDownloadPath } from './lib/video-rules.js';
-import { gatewayJobToItem, isGatewayJobQueued } from './lib/gateway-worker.js';
+import { claimMarkerIsStale, gatewayJobToItem, isGatewayJobQueued } from './lib/gateway-worker.js';
 import { claimGatewayJob, gatewayBinding, reportGatewayFailure, reportGatewayProgress, reportGatewayResult, reportGatewayTelemetry, testGateway } from './lib/gateway-client.js';
 import { normalizeWorkerControl, observedAccount, observedQuote, workerObservation } from './lib/gateway-manager.js';
 import { getGatewayArtifact, putGatewayArtifact, deleteGatewayArtifact } from './lib/gateway-artifacts.js';
@@ -121,13 +121,34 @@ async function applyGatewayControl(raw, settings) {
     requestedRevision: control.revision, revision: matches ? control.revision : null } });
 }
 
-async function gatewayObservation(settings, account = null) {
+// The claim marker while it is still a real hold. One past Gateway's own lease is removed and
+// reported as no hold, so the claim gate and telemetry agree on the same truth. `leaseSeconds` is
+// the value the caller already read from Gateway's health; it is not fetched again here.
+async function liveClaimMarker(leaseSeconds) {
+  let marker = (await chrome.storage.local.get(GATEWAY_CLAIM_KEY))[GATEWAY_CLAIM_KEY];
+  if (!marker) return null;
+  // A marker saved before `at` existed cannot be proven old; stamp it once so it is bounded by
+  // one lease from now instead of holding this worker until a person looks.
+  if (!(Number(marker.at) > 0)) {
+    marker = { ...marker, at: Date.now() };
+    await chrome.storage.local.set({ [GATEWAY_CLAIM_KEY]: marker });
+  }
+  if (!claimMarkerIsStale(marker, leaseSeconds)) return marker;
+  await chrome.storage.local.remove(GATEWAY_CLAIM_KEY);
+  await writeStatus('The last Gateway claim went unanswered past its lease; it has expired and this worker will claim again.', 'err');
+  return null;
+}
+
+async function gatewayObservation(settings, account = null, leaseSeconds) {
   const [queue, paused, stored] = await Promise.all([getQueue(), isPaused(),
     chrome.storage.local.get([GATEWAY_CLAIM_KEY, GATEWAY_CONTROL_KEY, NEXT_RUN_KEY, COOLDOWN_KEY])]);
   let control = stored[GATEWAY_CONTROL_KEY];
   if (control?.binding !== await gatewayBinding(settings)) control = null;
   if (control?.pacing?.minSeconds !== settings.humanDelayMinSec || control?.pacing?.maxSeconds !== settings.humanDelayMaxSec) control = control ? { ...control, revision: null } : null;
-  return workerObservation(settings, { queue, paused, control, claim: stored[GATEWAY_CLAIM_KEY],
+  // An expired marker is not a hold: reporting "recovering" while the worker goes on to claim
+  // would tell Gateway this worker is stuck when it is not.
+  const marker = await liveClaimMarker(leaseSeconds);
+  return workerObservation(settings, { queue, paused, control, claim: marker,
     nextRunAt: Number(stored[NEXT_RUN_KEY]) || 0, cooldownUntil: Number(stored[COOLDOWN_KEY]) || 0 }, account);
 }
 
@@ -139,10 +160,10 @@ async function applyBoundGatewayControl(control, requestSettings) {
   await applyGatewayControl(control, current);
 }
 
-async function publishGatewayState(settings, account = null) {
+async function publishGatewayState(settings, account = null, leaseSeconds) {
   const current = await gatewaySettings();
   if (await gatewayBinding(current) !== await gatewayBinding(settings)) throw new Error('Gateway connection changed before telemetry.');
-  const observation = await gatewayObservation(current, account);
+  const observation = await gatewayObservation(current, account, leaseSeconds);
   const response = await reportGatewayTelemetry(settings, observation);
   await applyBoundGatewayControl(response.control, settings);
   return observation;
@@ -162,12 +183,14 @@ async function connectGateway() {
   return { settings: await gatewaySettings(), health };
 }
 
-async function assertGatewayConnection(item) {
+async function assertGatewayConnection(item, leaseSeconds) {
   const settings = await gatewaySettings();
   if (settings.mode !== 'gateway' || !item.gatewayBinding || await gatewayBinding(settings) !== item.gatewayBinding) {
     throw new Error('Gateway connection changed; restore the claiming connection before retrying this job.');
   }
-  const marker = (await chrome.storage.local.get(GATEWAY_CLAIM_KEY))[GATEWAY_CLAIM_KEY];
+  // Only a marker that is still a live hold may block this delivery; one past Gateway's lease
+  // has been released there, so it must not keep retained work stuck here either.
+  const marker = await liveClaimMarker(leaseSeconds);
   if (marker && (marker.claimId !== item.gatewayClaimId || marker.binding !== item.gatewayBinding || marker.jobId !== item.gatewayJobId)) {
     throw new Error('Another Gateway claim needs review; this job remains held.');
   }
@@ -221,7 +244,7 @@ async function deliverGatewayArtifact(item, artifact) {
   if (artifact.buffer.byteLength > health.maxResultBytes) {
     throw new Error(`Gateway video exceeds the advertised ${health.maxResultBytes} byte result limit; bytes are retained.`);
   }
-  await assertGatewayConnection(item);
+  await assertGatewayConnection(item, health.leaseSeconds);
   await reportGatewayResult(settings, item.gatewayJobId, artifact.buffer, 'video/mp4');
   // Persist acceptance before cleanup: an interrupted cleanup must never upload again.
   await patchItem(item.id, { status: 'done', phase: 'done', gatewaySettled: true, finishedAt: Date.now(), error: undefined });
@@ -239,13 +262,15 @@ async function gatewayTick() {
     const initial = await gatewaySettings();
     if (!initial.gatewayUrl || !initial.gatewayToken) return null;
     const { settings, health } = await connectGateway();
-    await publishGatewayState(settings);
+    await publishGatewayState(settings, null, health.leaseSeconds);
     // Connecting and reporting state in every mode is deliberate: a paired worker must stay visible
     // and stoppable from Gateway while stopped/not enabled. Only claiming is gated on Gateway mode.
     if ((await getSettings()).mode !== 'gateway' || processing || await isPaused() || await managerDispatchPaused(await getSettings())) return null;
     const queue = await getQueue();
     if (queue.some((item) => ['pending', 'running'].includes(item.status) || (item.gatewayJobId && !item.gatewaySettled))) return null;
-    if ((await chrome.storage.local.get(GATEWAY_CLAIM_KEY))[GATEWAY_CLAIM_KEY]) {
+    // A live marker still blocks; one past Gateway's own lease has expired and this worker claims
+    // again, so an uncertain claim no longer needs a person to unstick it.
+    if (await liveClaimMarker(health.leaseSeconds)) {
       throw new Error('A Gateway claim has an uncertain outcome; review is required before claiming again.');
     }
     if (await holdForCooldown(initial, { label: 'Gateway video' }) || await waitForPacing(initial, { label: 'Gateway video' })) return null;
@@ -269,8 +294,8 @@ async function gatewayTick() {
       return null;
     }
     const account = Number.isFinite(maxAge) && maxAge > 0 ? observedAccount(inspected.account, maxAge) : null;
-    await publishGatewayState(current, account);
-    let observation = await gatewayObservation(await gatewaySettings(), account);
+    await publishGatewayState(current, account, health.leaseSeconds);
+    let observation = await gatewayObservation(await gatewaySettings(), account, health.leaseSeconds);
     if (!account || observation.telemetry.state.paused || !observation.telemetry.state.controlRevision ||
         account.connection !== 'connected' || account.signIn !== 'signed_in' || account.readiness !== 'ready') return null;
     const claimId = createRandomId();
@@ -295,7 +320,7 @@ async function gatewayTick() {
     if (quoted.pricing?.disagreement) {
       await writeStatus(`Flow's page quotes ${quoted.pricing.disagreement.page} credits where the rate table says ${quoted.pricing.disagreement.table}; the page is used.`, 'info');
     }
-    observation = await gatewayObservation(await gatewaySettings(), currentAccount);
+    observation = await gatewayObservation(await gatewaySettings(), currentAccount, health.leaseSeconds);
     if (await isPaused() || processing || await managerDispatchPaused(await getSettings()) ||
         await gatewayBinding(await gatewaySettings()) !== binding || !observation.telemetry.state.controlRevision ||
         await holdForCooldown(await getSettings(), { label: 'Gateway video' }) ||
