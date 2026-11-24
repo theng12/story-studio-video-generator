@@ -1,7 +1,7 @@
 # Story Studio Video Generator — what it is
 
-Manifest V3 Chrome extension, video-only. Version 1.3.30 · published as `video-1.3.30` on
-`theng12/kh-extensions` (sha256 `7f455995d52a…`, 81,252 B) · Extension category, line X001.
+Manifest V3 Chrome extension, video-only. Version 1.3.31 · published as `video-1.3.31` on
+`theng12/kh-extensions` (sha256 `15d2b3903890…`, 81,337 B) · Extension category, line X001.
 
 ## What it does
 

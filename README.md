@@ -11,8 +11,8 @@ Paste one video prompt per line, review the batch, queue it — each line become
 
 ![The prompt box filled with three demo prompts, ready to review](docs/screenshots/flow-light.png)
 
-The panel in the other theme: [main panel, light](docs/screenshots/main-light.png) ·
-[prompt flow, dark](docs/screenshots/flow-dark.png).
+The panel in light theme, prompt box still empty: [main panel, light](docs/screenshots/main-light.png) ·
+the prompt box filled with the same three prompts, dark: [prompt flow, dark](docs/screenshots/flow-dark.png).
 
 Two things are never traded away: **a paid submission whose outcome is unknown is never replayed**,
 and **retained media is never regenerated to retry a delivery**. Persist the returned media ID
@@ -51,11 +51,12 @@ on **Claim now**. Health and telemetry are reported in every mode so Gateway can
 a paired worker; only gateway mode may claim. Gateway jobs stay bound to the connection that claimed
 them: changing the URL, token or mode holds retained work until that connection is restored.
 
-For local verification without the real gateway, run the mock in the parent `chrome-extensions`
-folder:
+For local verification without the real gateway, run the lane's shared mock. It sits outside this
+repository, two folders up, at `_orchestra/developer-extensions/_capture/mock-gateway.mjs`, so from
+the repository root:
 
 ```bash
-FLOW_PROJECT_ID=<flow-project-uuid> node _capture/mock-gateway.mjs
+FLOW_PROJECT_ID=<flow-project-uuid> node ../../_capture/mock-gateway.mjs
 ```
 
 ## Price rules (owner, 2026-11-12)
