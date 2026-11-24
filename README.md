@@ -1,7 +1,18 @@
 # Story Studio Video Generator
 
+<img src="assets/icon.png" alt="Story Studio Video Generator icon: a video camera with a play symbol on a blue tile" width="96" align="right">
+
 A Manifest V3 Chrome extension for generating videos with Google Flow. It is video-only, it uses
 the signed Flow website session, and it spends that account's credits.
+
+![The extension panel with an empty queue: Active batch ready, standalone mode, provider settings and the prompt box](docs/screenshots/main-dark.png)
+
+Paste one video prompt per line, review the batch, queue it — each line becomes a task saved to Downloads:
+
+![The prompt box filled with three demo prompts, ready to review](docs/screenshots/flow-light.png)
+
+The same screens in the other theme: [main panel, light](docs/screenshots/main-light.png) ·
+[prompt flow, dark](docs/screenshots/flow-dark.png).
 
 Two things are never traded away: **a paid submission whose outcome is unknown is never replayed**,
 and **retained media is never regenerated to retry a delivery**. Persist the returned media ID

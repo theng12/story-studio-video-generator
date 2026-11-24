@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.3.31 — 2026-11-24
+- A fresh install opens a working panel again. The panel drew the Gateway connection state before its own settings had loaded, so the first run threw and stopped the rest of the panel from setting up. Settings now load first, and the connection line does nothing until they exist. Caught by rendering the shipped build in a clean profile; a test now covers the early call.
+
 ## 1.3.30 — 2026-11-20
 - Same claim rule as 1.3.29, with its edges proven: a marker still holds at exactly Gateway's lease and is released 31 s later, and a lease the health call did not return expires nothing. The panel's mode switch is now tested against the real code — before, the test pulled one function out of the panel and left the sibling it calls behind, so it failed on a reference the shipped panel always has.
 

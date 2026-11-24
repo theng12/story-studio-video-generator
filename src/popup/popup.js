@@ -82,7 +82,7 @@ let gatewayRelay = { machineId: '', readiness: null };
 
 function renderGatewayRelayState() {
   const el = $('gatewayRelayState');
-  if (!el) return;
+  if (!el || !settings) return;
   const connected = !!(settings.gatewayUrl && gatewayToken && settings.gatewayWorkerId);
   const relayOwned = !!gatewayRelay.machineId;
   const blocked = connected && gatewayRelay.readiness && gatewayRelay.readiness.ready === false;
@@ -699,13 +699,15 @@ async function initWhatsNew() {
 }
 
 async function init() {
+  // Settings first: the relay renderer reads them, and calling it before this
+  // threw on a fresh profile and aborted the rest of init (1.3.31).
+  settings = await getSettings();
+  gatewayToken = await getGatewayToken();
   await loadGatewayRelayState();
   await initTheme();
   const manifest = chrome.runtime.getManifest();
   $('extensionVersion').textContent = `v${manifest.version}`;
 
-  settings = await getSettings();
-  gatewayToken = await getGatewayToken();
   // A failed inventory refresh must not abort init: everything below wires the
   // controls, so throwing here leaves the whole side panel inert.
   await refreshModels().catch((error) => {

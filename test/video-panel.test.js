@@ -49,6 +49,16 @@ async function callPanelFunction(name, sandbox) {
   return runInNewContext(`${fns.join('\n')}\n${names.at(-1)}()`, sandbox);
 }
 
+test('the relay render is safe before settings load (fresh profile)', async () => {
+  const panel = await readFile(new URL('../src/popup/popup.js', import.meta.url), 'utf8');
+  const fn = extractPanelFunction(panel, 'renderGatewayRelayState');
+  assert.ok(fn);
+  assert.doesNotThrow(() => runInNewContext(`${fn}\nrenderGatewayRelayState()`, {
+    settings: undefined, gatewayToken: '', gatewayRelay: { machineId: '', readiness: null },
+    $: () => ({ className: '', textContent: '' }),
+  }));
+});
+
 test('the panel harness names every popup function a test forgot to list', async () => {
   const panel = await readFile(new URL('../src/popup/popup.js', import.meta.url), 'utf8');
   const missing = panelCallsMissing(panel, 'changeWorkingMode', {});
