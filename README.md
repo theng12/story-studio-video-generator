@@ -5,13 +5,13 @@
 A Manifest V3 Chrome extension for generating videos with Google Flow. It is video-only, it uses
 the signed Flow website session, and it spends that account's credits.
 
-![The extension panel with an empty queue: Active batch ready, standalone mode, provider settings and the prompt box](docs/screenshots/main-dark.png)
+![The extension panel ready to work: Active batch, standalone mode, provider settings and a prompt box holding three demo prompts](docs/screenshots/main-dark.png)
 
 Paste one video prompt per line, review the batch, queue it — each line becomes a task saved to Downloads:
 
 ![The prompt box filled with three demo prompts, ready to review](docs/screenshots/flow-light.png)
 
-The same screens in the other theme: [main panel, light](docs/screenshots/main-light.png) ·
+The panel in the other theme: [main panel, light](docs/screenshots/main-light.png) ·
 [prompt flow, dark](docs/screenshots/flow-dark.png).
 
 Two things are never traded away: **a paid submission whose outcome is unknown is never replayed**,
