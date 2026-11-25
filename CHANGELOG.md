@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.3.32 — 2026-11-25
+- The panel now says why no video work is being claimed when Gateway has its dispatch switch off. The worker used to go quiet with nothing written anywhere — the reason existed only as Gateway's own applied control, which the panel never showed. It now writes one line when dispatch goes off and one when it comes back, keeps that state across a restart so it is not repeated every tick, and the panel shows it while the queue is empty.
+
 ## 1.3.31 — 2026-11-24
 - A fresh install opens a working panel again. The panel drew the Gateway connection state before its own settings had loaded, so the first run threw and stopped the rest of the panel from setting up. Settings now load first, and the connection line does nothing until they exist. Caught by rendering the shipped build in a clean profile; a test now covers the early call.
 

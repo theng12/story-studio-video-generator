@@ -845,6 +845,40 @@ test('persistent manager OFF survives restart and local resume cannot override i
   } finally { worker.restore(); }
 });
 
+test('dispatch off is said once, kept across ticks and restarts, and answered when it returns', async () => {
+  let worker = await boot({ job: null, health: { control: { revision: 'off-revision', dispatchEnabled: false, closeRequested: false,
+    pacing: { minSeconds: 0, maxSeconds: 0 } } } });
+  try {
+    const response = await worker.send({ type: 'gatewayClaimNow' });
+    await worker.settled();
+    assert.equal(response.ok, true, JSON.stringify(response));
+    const first = worker.local.lastVideoStatus;
+    assert.equal(first.text, 'Gateway has dispatch turned off, so no video work is claimed until it is turned back on.');
+    assert.equal(first.source, 'gateway-dispatch');
+    assert.equal(first.dispatchEnabled, false);
+    assert.equal(count(worker, '/claim'), 0);
+    // Said once: a later tick while it is still off leaves the line and its time alone.
+    await pause(10);
+    await worker.send({ type: 'gatewayClaimNow' });
+    await worker.settled();
+    assert.equal(worker.local.lastVideoStatus.timestamp, first.timestamp);
+    // A worker restart is not a new fact either.
+    const saved = { local: worker.local, sync: worker.sync, health: { control: worker.control } };
+    worker.restore(); worker = await boot({ ...saved, job: null });
+    await pause(10);
+    await worker.send({ type: 'gatewayClaimNow' });
+    await worker.settled();
+    assert.equal(worker.local.lastVideoStatus.timestamp, first.timestamp);
+    // And it answers when dispatch comes back.
+    Object.assign(worker.control, { revision: 'on-revision', dispatchEnabled: true });
+    await worker.send({ type: 'gatewayClaimNow' });
+    await worker.settled();
+    assert.equal(worker.local.lastVideoStatus.text, 'Gateway dispatch is back on; this worker is claiming video work again.');
+    assert.equal(worker.local.lastVideoStatus.dispatchEnabled, true);
+    assert.equal(worker.local.gatewayDispatchState, false);
+  } finally { worker.restore(); }
+});
+
 test('initial manager default preserves custom zero and withholds ack until desired pacing matches', async () => {
   const worker = await boot({ job: null, health: { control: { revision: 'default-revision', dispatchEnabled: true, closeRequested: false,
     pacing: { minSeconds: 5, maxSeconds: 15 } } } });

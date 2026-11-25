@@ -24,6 +24,7 @@ const GATEWAY_ALARM = 'gatewayWorkerTick';
 const GATEWAY_REFERENCES_KEY = 'gatewayJobReferences';
 const GATEWAY_CLAIM_KEY = 'gatewayUnsettledClaim';
 const GATEWAY_CONTROL_KEY = 'gatewayAppliedControl';
+const GATEWAY_DISPATCH_KEY = 'gatewayDispatchState';
 
 let claiming = false;
 let processing = false;
@@ -97,6 +98,28 @@ async function managerDispatchPaused(settings) {
   const current = await gatewaySettings();
   try { return saved.binding !== await gatewayBinding(current) || !saved.dispatchEnabled; }
   catch { return true; }
+}
+
+// Gateway turning dispatch off is the whole reason this worker sits still, so it gets said once in
+// each direction instead of every tick. A control we cannot tie to this connection proves nothing,
+// so it is never reported as an off switch.
+async function noteDispatchState(settings) {
+  const saved = (await chrome.storage.local.get(GATEWAY_CONTROL_KEY))[GATEWAY_CONTROL_KEY];
+  let disabled = null;
+  if (saved) {
+    try { disabled = saved.binding === await gatewayBinding(settings) ? !saved.dispatchEnabled : null; } catch { disabled = null; }
+  }
+  if (disabled === null) return;
+  const last = (await chrome.storage.local.get(GATEWAY_DISPATCH_KEY))[GATEWAY_DISPATCH_KEY];
+  if (last === disabled) return;
+  await chrome.storage.local.set({ [GATEWAY_DISPATCH_KEY]: disabled });
+  await writeStatus(
+    disabled
+      ? 'Gateway has dispatch turned off, so no video work is claimed until it is turned back on.'
+      : 'Gateway dispatch is back on; this worker is claiming video work again.',
+    'info',
+    { source: 'gateway-dispatch', dispatchEnabled: !disabled },
+  );
 }
 
 async function applyGatewayControl(raw, settings) {
@@ -265,7 +288,11 @@ async function gatewayTick() {
     await publishGatewayState(settings, null, health.leaseSeconds);
     // Connecting and reporting state in every mode is deliberate: a paired worker must stay visible
     // and stoppable from Gateway while stopped/not enabled. Only claiming is gated on Gateway mode.
-    if ((await getSettings()).mode !== 'gateway' || processing || await isPaused() || await managerDispatchPaused(await getSettings())) return null;
+    // The token is part of the connection binding, so the dispatch reading needs it too.
+    const tickSettings = await gatewaySettings();
+    if (tickSettings.mode !== 'gateway' || processing || await isPaused()) return null;
+    await noteDispatchState(tickSettings);
+    if (await managerDispatchPaused(tickSettings)) return null;
     const queue = await getQueue();
     if (queue.some((item) => ['pending', 'running'].includes(item.status) || (item.gatewayJobId && !item.gatewaySettled))) return null;
     // A live marker still blocks; one past Gateway's own lease has expired and this worker claims

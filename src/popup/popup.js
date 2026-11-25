@@ -433,8 +433,11 @@ function renderQueue(queue, state, live) {
     $('activeJobMeta').textContent =
       `${counts.done} saved · ${counts.failed} failed · ${counts.ambiguous} need review`;
   } else {
-    $('activeJob').textContent = 'Ready to generate video';
-    $('activeJobMeta').textContent = 'Add prompts, then queue them.';
+    // With nothing queued, the worker's own word about Gateway's dispatch switch is the only
+    // reason the panel would otherwise look idle for no stated cause.
+    const dispatch = live?.source === 'gateway-dispatch' ? live : null;
+    $('activeJob').textContent = dispatch?.dispatchEnabled === false ? 'Gateway dispatch is off' : 'Ready to generate video';
+    $('activeJobMeta').textContent = dispatch ? dispatch.text : 'Add prompts, then queue them.';
   }
 
   const progress = total ? Math.round(((finished + counts.running * .45) / total) * 100) : 0;
